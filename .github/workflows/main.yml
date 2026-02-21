@@ -21,19 +21,20 @@ jobs:
 
       - name: Reconstruct Project Structure
         run: |
-          # Guardamos tus archivos importantes
-          cp lib/main.dart main_backup.dart
-          cp pubspec.yaml pubspec_backup.yaml
+          # 1. Mover archivos a carpetas temporales FUERA de la raíz
+          mkdir ../temp_backup
+          cp lib/main.dart ../temp_backup/main.dart
+          cp pubspec.yaml ../temp_backup/pubspec.yaml
           
-          # Limpiamos el directorio para que flutter create no se queje
+          # 2. Limpiar la raíz con seguridad
           rm -rf *
           
-          # El robot crea el proyecto oficial con toda la estructura de Android
+          # 3. Crear el proyecto oficial
           flutter create --project-name qr_app_comagro .
           
-          # Le devolvemos tu código V53 al proyecto oficial
-          cp main_backup.dart lib/main.dart
-          cp pubspec_backup.yaml pubspec.yaml
+          # 4. Inyectar tu código V53 desde la carpeta temporal
+          cp ../temp_backup/main.dart lib/main.dart
+          cp ../temp_backup/pubspec.yaml pubspec.yaml
           
       - name: Get dependencies
         run: flutter pub get
