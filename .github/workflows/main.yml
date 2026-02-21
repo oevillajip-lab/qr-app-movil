@@ -1,14 +1,14 @@
 name: Build APK V53
-on: [push] # Se activa cada vez que guardas un cambio
+on: [push]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4 # Actualizado a v4
       
       - name: Install Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4 # Actualizado a v4
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -23,10 +23,10 @@ jobs:
         run: flutter pub get
         
       - name: Build APK
-        run: flutter build apk --debug # Debug es más rápido para la primera prueba
+        run: flutter build apk --debug
         
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # AQUÍ ESTABA EL ERROR, YA ESTÁ EN V4
         with:
           name: app-comagro-v53
           path: build/app/outputs/flutter-apk/app-debug.apk
