@@ -1,5 +1,5 @@
-name: qr_app_comagro
-description: App nativa generadora de QRs V53 para Comagro
+name: qr_app
+description: Aplicacion QR + Logo
 version: 1.0.0+1
 
 environment:
@@ -10,7 +10,8 @@ dependencies:
     sdk: flutter
   http: ^1.1.0        
   image_picker: ^1.0.4 
-  path_provider: ^2.1.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/app_icon.png
