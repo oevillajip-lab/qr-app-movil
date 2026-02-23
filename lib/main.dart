@@ -29,9 +29,6 @@ void main() {
   ));
 }
 
-// ==========================================
-// PANTALLA DE PRESENTACIÓN (SPLASH SCREEN)
-// ==========================================
 class SplashScreen extends StatefulWidget {
   @override
   _SplashScreenState createState() => _SplashScreenState();
@@ -52,9 +49,6 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
-// ==========================================
-// PANTALLA PRINCIPAL
-// ==========================================
 class MainScreen extends StatefulWidget {
   @override
   _MainScreenState createState() => _MainScreenState();
@@ -77,7 +71,13 @@ class _MainScreenState extends State<MainScreen> {
   Timer? _simulatedTimer;
 
   Future<void> _pickLogo() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    // ¡LA SOLUCIÓN! Reducimos el tamaño de la imagen para que no colapse el servidor
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 60, // Comprime la calidad
+      maxWidth: 600,    // Achica el tamaño
+      maxHeight: 600,
+    );
     if (picked != null) setState(() => _logoFile = File(picked.path));
   }
 
@@ -129,21 +129,14 @@ class _MainScreenState extends State<MainScreen> {
       }
 
       var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
+      var response = await http.Response.fromStream(streamedResponse).timeout(Duration(seconds: 110));
       
       _simulatedTimer?.cancel();
 
       if (response.statusCode == 200) {
-        // Carga completada - Se vuelve 100% y Verde
         setState(() { _progressValue = 1.0; });
-        
-        // Esperamos medio segundo para que el usuario vea el verde de éxito
         await Future.delayed(Duration(milliseconds: 600));
-        
-        setState(() {
-          _resultImage = response.bodyBytes;
-          _loading = false;
-        });
+        setState(() { _resultImage = response.bodyBytes; _loading = false; });
       } else {
         setState(() { _loading = false; });
         _showMessage("Error del servidor: ${response.statusCode}");
@@ -151,11 +144,10 @@ class _MainScreenState extends State<MainScreen> {
     } catch (e) {
       _simulatedTimer?.cancel();
       setState(() { _loading = false; });
-      _showMessage("Error de conexión. El servidor puede estar apagado.");
+      _showMessage("Error de conexión. Revisa tu internet o intenta de nuevo.");
     }
   }
 
-  // FUNCIÓN GUARDAR EN GALERÍA
   Future<void> _saveToGallery() async {
     if (_resultImage == null) return;
     var status = await Permission.storage.request();
@@ -173,14 +165,13 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // FUNCIÓN COMPARTIR NATIVO
   Future<void> _shareImage() async {
     if (_resultImage == null) return;
     try {
       final directory = await getTemporaryDirectory();
       final imagePath = await File('${directory.path}/QR_Compartir.png').create();
       await imagePath.writeAsBytes(_resultImage!);
-      await Share.shareXFiles([XFile(imagePath.path)], text: '¡Mira mi nuevo código QR!');
+      await Share.shareXFiles([XFile(imagePath.path)], text: '¡Mira mi código QR!');
     } catch (e) {
       _showMessage("Error al intentar compartir.");
     }
@@ -241,7 +232,6 @@ class _MainScreenState extends State<MainScreen> {
             ),
             SizedBox(height: 30),
             
-            // LÓGICA DE CARGA Y RESULTADO
             if (_loading)
               Center(
                 child: Column(
@@ -251,7 +241,7 @@ class _MainScreenState extends State<MainScreen> {
                       child: CircularProgressIndicator(
                         value: _progressValue,
                         backgroundColor: Colors.grey[300],
-                        color: _progressValue == 1.0 ? Colors.green : Colors.black, // Se vuelve verde al 100%
+                        color: _progressValue == 1.0 ? Colors.green : Colors.black,
                         strokeWidth: 6,
                       ),
                     ),
@@ -270,7 +260,6 @@ class _MainScreenState extends State<MainScreen> {
                 child: Text("GENERAR QR + LOGO", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))
               ),
             
-            // SI HAY IMAGEN, MUESTRA EL QR Y LOS DOS BOTONES A LA PAR
             if (_resultImage != null && !_loading) ...[
               Padding(padding: EdgeInsets.only(top: 20, bottom: 20), child: Center(child: Image.memory(_resultImage!))),
               Row(
@@ -283,7 +272,7 @@ class _MainScreenState extends State<MainScreen> {
                       style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 15)),
                     ),
                   ),
-                  SizedBox(width: 10), // Separación entre botones
+                  SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _shareImage, 
@@ -295,7 +284,6 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
               SizedBox(height: 15),
-              // Botón extra para hacer uno nuevo
               TextButton(
                 onPressed: () => setState(() => _resultImage = null),
                 child: Center(child: Text("Generar otro código", style: TextStyle(color: Colors.black, decoration: TextDecoration.underline))),
