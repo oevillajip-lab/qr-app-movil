@@ -1,4 +1,4 @@
-name: Build APK V53
+name: Build APK QR + Logo
 on: [push]
 
 jobs:
@@ -6,28 +6,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: 'zulu', java-version: '17' }
-      - uses: subosito/flutter-action@v2
-        with: { flutter-version: '3.13.0', channel: 'stable' }
+      
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.13.0'
+          channel: 'stable'
 
       - name: Reconstruct Project Structure
         run: |
+          # 1. Resguardamos tus archivos y tu logo
           mkdir ../temp_backup
           cp lib/main.dart ../temp_backup/main.dart
           cp pubspec.yaml ../temp_backup/pubspec.yaml
-          rm -rf *
-          flutter create --project-name qr_app_comagro .
+          cp -r assets ../temp_backup/assets
           
-          # PASO CLAVE: Inyectar permiso de Internet en el AndroidManifest
+          # 2. Limpiamos y creamos la base Android limpia
+          rm -rf *
+          flutter create --project-name qr_app .
+          
+          # 3. INYECCIÓN DEL PERMISO DE INTERNET (VITAL)
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
           
+          # 4. Devolvemos tus archivos al lugar correcto
           cp ../temp_backup/main.dart lib/main.dart
           cp ../temp_backup/pubspec.yaml pubspec.yaml
+          cp -r ../temp_backup/assets assets
           
-      - run: flutter pub get
-      - run: flutter build apk --release
-      - uses: actions/upload-artifact@v4
+      - name: Get dependencies
+        run: flutter pub get
+        
+      - name: Build APK
+        run: flutter build apk --release
+        
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: app-comagro-v53-final
+          name: QR-Logo-App
           path: build/app/outputs/flutter-apk/app-release.apk
