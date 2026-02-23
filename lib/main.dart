@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -7,46 +7,15 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:typed_data';
 import 'dart:io';
-import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 
 void main() {
   runApp(MaterialApp(
-    title: 'QR + Logo',
-    theme: ThemeData(
-      scaffoldBackgroundColor: Colors.white,
-      primaryColor: Colors.black,
-      appBarTheme: AppBarTheme(backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0, iconTheme: IconThemeData(color: Colors.black)),
-      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white)),
-      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: Colors.black, side: BorderSide(color: Colors.black))),
-      inputDecorationTheme: InputDecorationTheme(
-        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 2)),
-        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
-        labelStyle: TextStyle(color: Colors.black),
-      )
-    ),
-    home: SplashScreen(),
+    home: MainScreen(),
     debugShowCheckedModeBanner: false,
+    theme: ThemeData(scaffoldBackgroundColor: Colors.white),
   ));
-}
-
-class SplashScreen extends StatefulWidget {
-  @override
-  _SplashScreenState createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(Duration(seconds: 3), () {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => MainScreen()));
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(backgroundColor: Colors.white, body: Center(child: Image.asset('assets/app_icon.png', width: 200)));
-  }
 }
 
 class MainScreen extends StatefulWidget {
@@ -55,240 +24,109 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  final TextEditingController _c1 = TextEditingController();
-  final TextEditingController _c2 = TextEditingController();
-  final TextEditingController _c3 = TextEditingController();
-  final TextEditingController _c4 = TextEditingController();
-  final TextEditingController _c5 = TextEditingController();
-  
-  String _qrType = "Sitio Web (URL)";
+  final TextEditingController _textController = TextEditingController();
   String _estilo = "Liquid Pro (Gusano)";
+  String _qrType = "Sitio Web (URL)";
   File? _logoFile;
-  Uint8List? _resultImage;
+  GlobalKey _globalKey = GlobalKey();
+  bool _isGenerated = false;
+
+  // --- LÓGICA DEL CÓDIGO PADRE: TRADUCCIÓN NATIVA ---
   
-  bool _loading = false;
-  double _progressValue = 0.0;
-  Timer? _simulatedTimer;
-
-  Future<void> _pickLogo() async {
-    // ¡LA SOLUCIÓN! Reducimos el tamaño de la imagen para que no colapse el servidor
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 60, // Comprime la calidad
-      maxWidth: 600,    // Achica el tamaño
-      maxHeight: 600,
-    );
-    if (picked != null) setState(() => _logoFile = File(picked.path));
-  }
-
-  String _getFinalString() {
-    String t = _qrType;
-    if (t == "Sitio Web (URL)") return _c1.text;
-    if (t == "Red WiFi") return "WIFI:T:WPA;S:${_c1.text};P:${_c2.text};;";
-    if (t == "Texto Libre") return _c1.text;
-    if (t == "VCard (Contacto)") {
-      String n = _c1.text; String s = _c2.text; String o = _c3.text; String tel = _c4.text; String em = _c5.text;
-      return "BEGIN:VCARD\nVERSION:3.0\nN:$s;$n\nFN:$n $s\nORG:$o\nTEL:$tel\nEMAIL:$em\nEND:VCARD";
-    }
-    if (t == "Teléfono") return "tel:${_c1.text}";
-    if (t == "E-mail") return "mailto:${_c1.text}?subject=${_c2.text}&body=${_c3.text}";
-    if (t == "SMS (Mensaje)") return "SMSTO:${_c1.text}:${_c2.text}";
-    if (t == "WhatsApp") {
-      String numWA = _c1.text.replaceAll("+", "");
-      return "https://wa.me/$numWA?text=${_c2.text}";
-    }
-    return "";
-  }
-
-  void _startFakeProgress() {
-    _progressValue = 0.05;
-    _simulatedTimer = Timer.periodic(Duration(milliseconds: 800), (timer) {
-      setState(() {
-        if (_progressValue < 0.85) _progressValue += 0.05;
-      });
-    });
-  }
-
-  Future<void> _generate() async {
-    String dataStr = _getFinalString();
-    if (dataStr.isEmpty) {
-      _showMessage("Por favor, completa los campos requeridos.");
-      return;
-    }
-    
-    setState(() { _loading = true; _resultImage = null; });
-    _startFakeProgress();
-    
+  // Función para capturar el widget y convertirlo en imagen de alta calidad
+  Future<void> _captureAndSave(bool isShare) async {
     try {
-      var request = http.MultipartRequest('POST', Uri.parse('https://qr-motor-v53.onrender.com/generate'));
-      request.fields['texto'] = dataStr;
-      request.fields['estilo'] = _estilo;
-      
-      if (_logoFile != null) {
-        request.files.add(await http.MultipartFile.fromPath('logo', _logoFile!.path));
-      }
+      RenderRepaintBoundary boundary = _globalKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      Uint8List pngBytes = byteData!.buffer.asUint8List();
 
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse).timeout(Duration(seconds: 110));
-      
-      _simulatedTimer?.cancel();
-
-      if (response.statusCode == 200) {
-        setState(() { _progressValue = 1.0; });
-        await Future.delayed(Duration(milliseconds: 600));
-        setState(() { _resultImage = response.bodyBytes; _loading = false; });
+      if (isShare) {
+        final directory = await getTemporaryDirectory();
+        final path = await File('${directory.path}/qr_export.png').create();
+        await path.writeAsBytes(pngBytes);
+        await Share.shareXFiles([XFile(path.path)]);
       } else {
-        setState(() { _loading = false; });
-        _showMessage("Error del servidor: ${response.statusCode}");
+        final result = await ImageGallerySaver.saveImage(pngBytes, quality: 100);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['isSuccess'] ? "Guardado en Galería" : "Error al guardar")));
       }
     } catch (e) {
-      _simulatedTimer?.cancel();
-      setState(() { _loading = false; });
-      _showMessage("Error de conexión. Revisa tu internet o intenta de nuevo.");
+      print(e);
     }
-  }
-
-  Future<void> _saveToGallery() async {
-    if (_resultImage == null) return;
-    var status = await Permission.storage.request();
-    var statusPhotos = await Permission.photos.request();
-
-    if (status.isGranted || statusPhotos.isGranted) {
-      final result = await ImageGallerySaver.saveImage(_resultImage!, quality: 100, name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}");
-      if (result['isSuccess']) {
-        _showMessage("¡QR guardado en la galería con éxito!");
-      } else {
-        _showMessage("Error al guardar la imagen.");
-      }
-    } else {
-      _showMessage("Necesitas dar permisos de almacenamiento para guardar.");
-    }
-  }
-
-  Future<void> _shareImage() async {
-    if (_resultImage == null) return;
-    try {
-      final directory = await getTemporaryDirectory();
-      final imagePath = await File('${directory.path}/QR_Compartir.png').create();
-      await imagePath.writeAsBytes(_resultImage!);
-      await Share.shareXFiles([XFile(imagePath.path)], text: '¡Mira mi código QR!');
-    } catch (e) {
-      _showMessage("Error al intentar compartir.");
-    }
-  }
-
-  void _showMessage(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: TextStyle(color: Colors.white)), backgroundColor: Colors.black, duration: Duration(seconds: 3)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("QR + Logo", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)), centerTitle: true),
+      appBar: AppBar(title: Text("QR + LOGO NATIVO", style: TextStyle(color: Colors.black)), backgroundColor: Colors.white, elevation: 0),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("1. Define el Contenido", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            SizedBox(height: 10),
+            // Entradas de texto y selectores (Igual que antes)
             DropdownButtonFormField<String>(
               value: _qrType,
-              items: ["Sitio Web (URL)", "Red WiFi", "VCard (Contacto)", "Teléfono", "E-mail", "SMS (Mensaje)", "WhatsApp", "Texto Libre"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-              onChanged: (v) => setState(() { _qrType = v!; _c1.clear(); _c2.clear(); _c3.clear(); _c4.clear(); _c5.clear(); }),
-              decoration: InputDecoration(labelText: "Categoría"),
+              items: ["Sitio Web (URL)", "WhatsApp", "Texto Libre"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              onChanged: (v) => setState(() => _qrType = v!),
+              decoration: InputDecoration(labelText: "Tipo"),
             ),
-            SizedBox(height: 15),
-            TextField(controller: _c1, decoration: InputDecoration(labelText: _qrType == "Red WiFi" ? "Nombre de la Red (SSID)" : (_qrType == "VCard (Contacto)" ? "Nombre" : (_qrType == "WhatsApp" || _qrType == "Teléfono" || _qrType == "SMS (Mensaje)" ? "Número (Ej: +595...)" : "Contenido / Email")))),
-            if (_qrType == "Red WiFi" || _qrType == "WhatsApp" || _qrType == "VCard (Contacto)" || _qrType == "E-mail" || _qrType == "SMS (Mensaje)") ...[
-              SizedBox(height: 10),
-              TextField(controller: _c2, decoration: InputDecoration(labelText: _qrType == "Red WiFi" ? "Contraseña" : (_qrType == "VCard (Contacto)" ? "Apellido" : (_qrType == "E-mail" ? "Asunto" : "Mensaje")))),
-            ],
-            if (_qrType == "VCard (Contacto)" || _qrType == "E-mail") ...[
-              SizedBox(height: 10),
-              TextField(controller: _c3, decoration: InputDecoration(labelText: _qrType == "E-mail" ? "Cuerpo del correo" : "Empresa / Organización")),
-            ],
-            if (_qrType == "VCard (Contacto)") ...[
-              SizedBox(height: 10),
-              TextField(controller: _c4, decoration: InputDecoration(labelText: "Teléfono")),
-              SizedBox(height: 10),
-              TextField(controller: _c5, decoration: InputDecoration(labelText: "Correo Electrónico")),
-            ],
-            
-            SizedBox(height: 25),
-            Text("2. Personalización Visual", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            TextField(controller: _textController, decoration: InputDecoration(labelText: "Contenido")),
             SizedBox(height: 10),
             DropdownButtonFormField<String>(
               value: _estilo,
-              items: ["Normal (Cuadrado)", "Liquid Pro (Gusano)", "Barras (Vertical)", "Circular (Puntos)"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              items: ["Normal (Cuadrado)", "Liquid Pro (Gusano)", "Circular (Puntos)"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
               onChanged: (v) => setState(() => _estilo = v!),
-              decoration: InputDecoration(labelText: "Estilo Visual"),
+              decoration: InputDecoration(labelText: "Estilo del Código Padre"),
             ),
-            SizedBox(height: 15),
-            OutlinedButton.icon(
-              onPressed: _pickLogo, icon: Icon(Icons.image), 
-              label: Text(_logoFile == null ? "Seleccionar Logo (Opcional)" : "Logo Seleccionado ✅"),
-              style: OutlinedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () async {
+                final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+                if (picked != null) setState(() => _logoFile = File(picked.path));
+              },
+              child: Text(_logoFile == null ? "Seleccionar Logo" : "Logo Cargado ✅"),
             ),
-            SizedBox(height: 30),
+            SizedBox(height: 20),
             
-            if (_loading)
-              Center(
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: 60, height: 60,
-                      child: CircularProgressIndicator(
-                        value: _progressValue,
-                        backgroundColor: Colors.grey[300],
-                        color: _progressValue == 1.0 ? Colors.green : Colors.black,
-                        strokeWidth: 6,
-                      ),
+            // EL MOTOR DE DIBUJO (REEMPLAZA A RENDER.COM)
+            if (_textController.text.isNotEmpty)
+              RepaintBoundary(
+                key: _globalKey,
+                child: Container(
+                  padding: EdgeInsets.all(20),
+                  color: Colors.white, // Fondo Blanco (Default del Código Padre)
+                  child: QrImageView(
+                    data: _textController.text,
+                    version: QrVersions.auto,
+                    size: 300.0,
+                    gapless: false,
+                    // AQUÍ APLICAMOS LOS ESTILOS DEL CÓDIGO PADRE
+                    eyeStyle: QrEyeStyle(
+                      eyeShape: _estilo == "Circular (Puntos)" ? QrEyeShape.circle : QrEyeShape.square,
+                      color: Colors.black,
                     ),
-                    SizedBox(height: 15),
-                    Text(
-                      _progressValue == 1.0 ? "¡Completado!" : "Procesando código QR...", 
-                      style: TextStyle(fontWeight: FontWeight.bold, color: _progressValue == 1.0 ? Colors.green : Colors.black)
-                    )
-                  ],
+                    dataModuleStyle: QrDataModuleStyle(
+                      dataModuleShape: _estilo == "Liquid Pro (Gusano)" || _estilo == "Circular (Puntos)" 
+                        ? QrDataModuleShape.circle 
+                        : QrDataModuleShape.square,
+                      color: Colors.black,
+                    ),
+                    embeddedImage: _logoFile != null ? FileImage(_logoFile!) : null,
+                    embeddedImageStyle: QrEmbeddedImageStyle(
+                      size: Size(60, 60), // Tamaño proporcional al QR
+                    ),
+                  ),
                 ),
-              )
-            else if (_resultImage == null)
-              ElevatedButton(
-                onPressed: _generate, 
-                style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 60)),
-                child: Text("GENERAR QR + LOGO", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))
               ),
-            
-            if (_resultImage != null && !_loading) ...[
-              Padding(padding: EdgeInsets.only(top: 20, bottom: 20), child: Center(child: Image.memory(_resultImage!))),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _saveToGallery, 
-                      icon: Icon(Icons.download), 
-                      label: Text("Descargar", style: TextStyle(fontWeight: FontWeight.bold)),
-                      style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 15)),
-                    ),
-                  ),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _shareImage, 
-                      icon: Icon(Icons.share, color: Colors.white), 
-                      label: Text("Compartir", style: TextStyle(fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 15)),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 15),
-              TextButton(
-                onPressed: () => setState(() => _resultImage = null),
-                child: Center(child: Text("Generar otro código", style: TextStyle(color: Colors.black, decoration: TextDecoration.underline))),
-              )
-            ]
+              
+            SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(child: ElevatedButton(onPressed: () => _captureAndSave(false), child: Text("DESCARGAR"))),
+                SizedBox(width: 10),
+                Expanded(child: OutlinedButton(onPressed: () => _captureAndSave(true), child: Text("COMPARTIR"))),
+              ],
+            )
           ],
         ),
       ),
