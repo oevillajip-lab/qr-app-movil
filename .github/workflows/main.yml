@@ -6,18 +6,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-          
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.13.0'
-          channel: 'stable'
+      - uses: actions/setup-java@v4
+        with: { distribution: 'zulu', java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.13.0', channel: 'stable' }
 
       - name: Reconstruct Project Structure
         run: |
@@ -26,17 +18,16 @@ jobs:
           cp pubspec.yaml ../temp_backup/pubspec.yaml
           rm -rf *
           flutter create --project-name qr_app_comagro .
+          
+          # PASO CLAVE: Inyectar permiso de Internet en el AndroidManifest
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          
           cp ../temp_backup/main.dart lib/main.dart
           cp ../temp_backup/pubspec.yaml pubspec.yaml
           
-      - name: Get dependencies
-        run: flutter pub get
-        
-      - name: Build APK
-        run: flutter build apk --release
-        
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
         with:
           name: app-comagro-v53-final
           path: build/app/outputs/flutter-apk/app-release.apk
