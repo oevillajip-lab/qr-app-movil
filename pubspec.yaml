@@ -10,6 +10,8 @@ dependencies:
     sdk: flutter
   http: ^1.1.0        
   image_picker: ^1.0.4 
+  image_gallery_saver: ^2.0.3
+  permission_handler: ^11.3.0
 
 flutter:
   uses-material-design: true
