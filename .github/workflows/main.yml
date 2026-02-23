@@ -21,18 +21,11 @@ jobs:
 
       - name: Reconstruct Project Structure
         run: |
-          # 1. Mover archivos a carpetas temporales FUERA de la raíz
           mkdir ../temp_backup
           cp lib/main.dart ../temp_backup/main.dart
           cp pubspec.yaml ../temp_backup/pubspec.yaml
-          
-          # 2. Limpiar la raíz con seguridad
           rm -rf *
-          
-          # 3. Crear el proyecto oficial
           flutter create --project-name qr_app_comagro .
-          
-          # 4. Inyectar tu código V53 desde la carpeta temporal
           cp ../temp_backup/main.dart lib/main.dart
           cp ../temp_backup/pubspec.yaml pubspec.yaml
           
@@ -40,10 +33,10 @@ jobs:
         run: flutter pub get
         
       - name: Build APK
-        run: flutter build apk --debug
+        run: flutter build apk --release
         
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-comagro-v53
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: app-comagro-v53-final
+          path: build/app/outputs/flutter-apk/app-release.apk
