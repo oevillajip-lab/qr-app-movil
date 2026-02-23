@@ -21,26 +21,41 @@ jobs:
 
       - name: Reconstruct Project Structure
         run: |
-          # 1. Resguardamos tus archivos y tu logo
           mkdir ../temp_backup
           cp lib/main.dart ../temp_backup/main.dart
           cp pubspec.yaml ../temp_backup/pubspec.yaml
           cp -r assets ../temp_backup/assets
           
-          # 2. Limpiamos y creamos la base Android limpia
           rm -rf *
           flutter create --project-name qr_app .
           
-          # 3. INYECCIÓN DEL PERMISO DE INTERNET (VITAL)
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          # ESCRITURA ABSOLUTA DE PERMISOS (INTERNET Y GALERIA)
+          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+              <application android:label="QR + Logo" android:name="${applicationName}" android:icon="@mipmap/ic_launcher">
+                  <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
+                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data android:name="flutterEmbedding" value="2" />
+              </application>
+          </manifest>
+          EOF
           
-          # 4. Devolvemos tus archivos al lugar correcto
           cp ../temp_backup/main.dart lib/main.dart
           cp ../temp_backup/pubspec.yaml pubspec.yaml
           cp -r ../temp_backup/assets assets
           
-      - name: Get dependencies
-        run: flutter pub get
+      - name: Get dependencies and Generate Icons
+        run: |
+          flutter pub get
+          flutter pub run flutter_launcher_icons
         
       - name: Build APK
         run: flutter build apk --release
