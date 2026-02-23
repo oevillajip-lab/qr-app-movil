@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:typed_data';
 import 'dart:io';
 
@@ -8,7 +10,6 @@ void main() {
   runApp(MaterialApp(
     title: 'QR + Logo',
     theme: ThemeData(
-      // COLORES ESTRICTAMENTE BLANCO Y NEGRO
       scaffoldBackgroundColor: Colors.white,
       primaryColor: Colors.black,
       appBarTheme: AppBarTheme(
@@ -35,7 +36,7 @@ void main() {
 }
 
 // ==========================================
-// 1. PANTALLA DE PRESENTACIÓN (SPLASH SCREEN)
+// PANTALLA DE PRESENTACIÓN (SPLASH SCREEN)
 // ==========================================
 class SplashScreen extends StatefulWidget {
   @override
@@ -46,7 +47,6 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Espera 3 segundos y pasa a la pantalla principal
     Future.delayed(Duration(seconds: 3), () {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => MainScreen()));
     });
@@ -55,16 +55,16 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Fondo blanco
+      backgroundColor: Colors.white,
       body: Center(
-        child: Image.asset('assets/app_icon.png', width: 200), // Tu logo en el centro
+        child: Image.asset('assets/app_icon.png', width: 200),
       ),
     );
   }
 }
 
 // ==========================================
-// 2. PANTALLA PRINCIPAL (CLON DE CÓDIGO PADRE)
+// PANTALLA PRINCIPAL
 // ==========================================
 class MainScreen extends StatefulWidget {
   @override
@@ -72,7 +72,6 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  // Controladores de texto
   final TextEditingController _c1 = TextEditingController();
   final TextEditingController _c2 = TextEditingController();
   final TextEditingController _c3 = TextEditingController();
@@ -90,7 +89,6 @@ class _MainScreenState extends State<MainScreen> {
     if (picked != null) setState(() => _logoFile = File(picked.path));
   }
 
-  // LÓGICA EXACTA DEL CÓDIGO PADRE PARA ARMAR EL STRING
   String _getFinalString() {
     String t = _qrType;
     if (t == "Sitio Web (URL)") return _c1.text;
@@ -117,7 +115,6 @@ class _MainScreenState extends State<MainScreen> {
     setState(() { _loading = true; _resultImage = null; });
     
     try {
-      // Conexión al motor CÓDIGO PADRE en Render
       var request = http.MultipartRequest('POST', Uri.parse('https://qr-motor-v53.onrender.com/generate'));
       request.fields['texto'] = dataStr;
       request.fields['estilo'] = _estilo;
@@ -132,17 +129,44 @@ class _MainScreenState extends State<MainScreen> {
       if (response.statusCode == 200) {
         setState(() => _resultImage = response.bodyBytes);
       } else {
-        _showError("Error del servidor: ${response.statusCode}");
+        _showMessage("Error del servidor: ${response.statusCode}");
       }
     } catch (e) {
-      _showError("Error de conexión. Revisa tu internet o espera a que el motor despierte.");
+      _showMessage("Error de conexión. Revisa tu internet.");
     } finally {
       setState(() => _loading = false);
     }
   }
 
-  void _showError(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), backgroundColor: Colors.black, action: SnackBarAction(label: 'OK', textColor: Colors.white, onPressed: () {})));
+  // FUNCIÓN NUEVA: GUARDAR EN GALERÍA
+  Future<void> _saveToGallery() async {
+    if (_resultImage == null) return;
+
+    // Pedimos permiso de almacenamiento (diferente según la versión de Android)
+    var status = await Permission.storage.request();
+    var statusPhotos = await Permission.photos.request();
+
+    if (status.isGranted || statusPhotos.isGranted) {
+      final result = await ImageGallerySaver.saveImage(
+        _resultImage!,
+        quality: 100,
+        name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}"
+      );
+
+      if (result['isSuccess']) {
+        _showMessage("¡QR guardado en la galería con éxito!");
+      } else {
+        _showMessage("Error al guardar la imagen.");
+      }
+    } else {
+      _showMessage("Necesitas dar permisos de almacenamiento para guardar.");
+    }
+  }
+
+  void _showMessage(String m) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m, style: TextStyle(color: Colors.white)), backgroundColor: Colors.black, duration: Duration(seconds: 3))
+    );
   }
 
   @override
@@ -168,7 +192,6 @@ class _MainScreenState extends State<MainScreen> {
             ),
             SizedBox(height: 15),
             
-            // CAMPOS DINÁMICOS SEGÚN CÓDIGO PADRE
             TextField(controller: _c1, decoration: InputDecoration(labelText: _qrType == "Red WiFi" ? "Nombre de la Red (SSID)" : (_qrType == "VCard (Contacto)" ? "Nombre" : (_qrType == "WhatsApp" || _qrType == "Teléfono" || _qrType == "SMS (Mensaje)" ? "Número (Ej: +595...)" : "Contenido / Email")))),
             
             if (_qrType == "Red WiFi" || _qrType == "WhatsApp" || _qrType == "VCard (Contacto)" || _qrType == "E-mail" || _qrType == "SMS (Mensaje)") ...[
@@ -215,7 +238,16 @@ class _MainScreenState extends State<MainScreen> {
                   child: Text("GENERAR QR + LOGO", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))
                 ),
             
-            if (_resultImage != null) Padding(padding: EdgeInsets.only(top: 25), child: Center(child: Image.memory(_resultImage!))),
+            // SI HAY IMAGEN, MUESTRA EL QR Y EL BOTÓN DE GUARDAR
+            if (_resultImage != null) ...[
+              Padding(padding: EdgeInsets.only(top: 25, bottom: 15), child: Center(child: Image.memory(_resultImage!))),
+              OutlinedButton.icon(
+                onPressed: _saveToGallery, 
+                icon: Icon(Icons.download), 
+                label: Text("Guardar en Galería", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(minimumSize: Size(double.infinity, 50), backgroundColor: Colors.white),
+              ),
+            ]
           ],
         ),
       ),
