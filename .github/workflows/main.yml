@@ -29,10 +29,15 @@ jobs:
           rm -rf *
           flutter create --project-name qr_app .
           
-          # INYECCIÓN QUIRÚRGICA DE PERMISOS (MANTIENE LA VERSIÓN V2 INTACTA)
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />' android/app/src/main/AndroidManifest.xml
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />' android/app/src/main/AndroidManifest.xml
+          # INYECCION QUIRURGICA SEGURA CON PYTHON
+          python3 -c '
+          with open("android/app/src/main/AndroidManifest.xml", "r") as f:
+              content = f.read()
+          perms = "<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>\n    <application"
+          content = content.replace("<application", perms)
+          with open("android/app/src/main/AndroidManifest.xml", "w") as f:
+              f.write(content)
+          '
           
           cp ../temp_backup/main.dart lib/main.dart
           cp ../temp_backup/pubspec.yaml pubspec.yaml
