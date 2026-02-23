@@ -10,13 +10,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 
-void main() {
-  runApp(MaterialApp(
-    home: MainScreen(),
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(scaffoldBackgroundColor: Colors.white),
-  ));
-}
+void main() => runApp(MaterialApp(home: MainScreen(), debugShowCheckedModeBanner: false));
 
 class MainScreen extends StatefulWidget {
   @override
@@ -24,109 +18,92 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  final TextEditingController _textController = TextEditingController();
+  final TextEditingController _controller = TextEditingController();
   String _estilo = "Liquid Pro (Gusano)";
-  String _qrType = "Sitio Web (URL)";
-  File? _logoFile;
-  GlobalKey _globalKey = GlobalKey();
-  bool _isGenerated = false;
+  File? _logo;
+  GlobalKey _qrKey = GlobalKey(); // Clave para capturar el QR como imagen
+  bool _mostrarBotones = false;
 
-  // --- LÓGICA DEL CÓDIGO PADRE: TRADUCCIÓN NATIVA ---
-  
-  // Función para capturar el widget y convertirlo en imagen de alta calidad
-  Future<void> _captureAndSave(bool isShare) async {
+  Future<void> _exportar(bool compartir) async {
     try {
-      RenderRepaintBoundary boundary = _globalKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      RenderRepaintBoundary boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
       ui.Image image = await boundary.toImage(pixelRatio: 3.0);
       ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       Uint8List pngBytes = byteData!.buffer.asUint8List();
 
-      if (isShare) {
-        final directory = await getTemporaryDirectory();
-        final path = await File('${directory.path}/qr_export.png').create();
-        await path.writeAsBytes(pngBytes);
-        await Share.shareXFiles([XFile(path.path)]);
+      if (compartir) {
+        final dir = await getTemporaryDirectory();
+        final file = await File('${dir.path}/qr.png').create();
+        await file.writeAsBytes(pngBytes);
+        await Share.shareXFiles([XFile(file.path)]);
       } else {
-        final result = await ImageGallerySaver.saveImage(pngBytes, quality: 100);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['isSuccess'] ? "Guardado en Galería" : "Error al guardar")));
+        await ImageGallerySaver.saveImage(pngBytes);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Guardado en Galería")));
       }
     } catch (e) {
-      print(e);
+      print("Error: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("QR + LOGO NATIVO", style: TextStyle(color: Colors.black)), backgroundColor: Colors.white, elevation: 0),
+      backgroundColor: Colors.white,
+      appBar: AppBar(title: Text("QR NATIVO", style: TextStyle(color: Colors.black)), backgroundColor: Colors.white, elevation: 0),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(20),
         child: Column(
           children: [
-            // Entradas de texto y selectores (Igual que antes)
-            DropdownButtonFormField<String>(
-              value: _qrType,
-              items: ["Sitio Web (URL)", "WhatsApp", "Texto Libre"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-              onChanged: (v) => setState(() => _qrType = v!),
-              decoration: InputDecoration(labelText: "Tipo"),
-            ),
-            TextField(controller: _textController, decoration: InputDecoration(labelText: "Contenido")),
-            SizedBox(height: 10),
+            TextField(controller: _controller, decoration: InputDecoration(labelText: "Contenido del QR", border: OutlineInputBorder())),
+            SizedBox(height: 15),
             DropdownButtonFormField<String>(
               value: _estilo,
               items: ["Normal (Cuadrado)", "Liquid Pro (Gusano)", "Circular (Puntos)"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
               onChanged: (v) => setState(() => _estilo = v!),
-              decoration: InputDecoration(labelText: "Estilo del Código Padre"),
+              decoration: InputDecoration(labelText: "Estilo"),
             ),
-            SizedBox(height: 20),
-            ElevatedButton(
+            SizedBox(height: 15),
+            OutlinedButton(
               onPressed: () async {
-                final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-                if (picked != null) setState(() => _logoFile = File(picked.path));
+                final img = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 50);
+                if (img != null) setState(() => _logo = File(img.path));
               },
-              child: Text(_logoFile == null ? "Seleccionar Logo" : "Logo Cargado ✅"),
+              child: Text(_logo == null ? "Seleccionar Logo" : "Logo Listo ✅"),
             ),
             SizedBox(height: 20),
             
-            // EL MOTOR DE DIBUJO (REEMPLAZA A RENDER.COM)
-            if (_textController.text.isNotEmpty)
-              RepaintBoundary(
-                key: _globalKey,
-                child: Container(
-                  padding: EdgeInsets.all(20),
-                  color: Colors.white, // Fondo Blanco (Default del Código Padre)
-                  child: QrImageView(
-                    data: _textController.text,
-                    version: QrVersions.auto,
-                    size: 300.0,
-                    gapless: false,
-                    // AQUÍ APLICAMOS LOS ESTILOS DEL CÓDIGO PADRE
-                    eyeStyle: QrEyeStyle(
-                      eyeShape: _estilo == "Circular (Puntos)" ? QrEyeShape.circle : QrEyeShape.square,
-                      color: Colors.black,
-                    ),
-                    dataModuleStyle: QrDataModuleStyle(
-                      dataModuleShape: _estilo == "Liquid Pro (Gusano)" || _estilo == "Circular (Puntos)" 
-                        ? QrDataModuleShape.circle 
-                        : QrDataModuleShape.square,
-                      color: Colors.black,
-                    ),
-                    embeddedImage: _logoFile != null ? FileImage(_logoFile!) : null,
-                    embeddedImageStyle: QrEmbeddedImageStyle(
-                      size: Size(60, 60), // Tamaño proporcional al QR
-                    ),
+            // EL MOTOR NATIVO (Dibuja en tiempo real)
+            RepaintBoundary(
+              key: _qrKey,
+              child: Container(
+                color: Colors.white,
+                padding: EdgeInsets.all(20),
+                child: QrImageView(
+                  data: _controller.text.isEmpty ? " " : _controller.text,
+                  version: QrVersions.auto,
+                  size: 250,
+                  eyeStyle: QrEyeStyle(
+                    eyeShape: _estilo == "Circular (Puntos)" ? QrEyeShape.circle : QrEyeShape.square,
+                    color: Colors.black,
                   ),
+                  dataModuleStyle: QrDataModuleStyle(
+                    dataModuleShape: _estilo == "Normal (Cuadrado)" ? QrDataModuleShape.square : QrDataModuleShape.circle,
+                    color: Colors.black,
+                  ),
+                  embeddedImage: _logo != null ? FileImage(_logo!) : null,
+                  embeddedImageStyle: QrEmbeddedImageStyle(size: Size(50, 50)),
                 ),
               ),
-              
+            ),
+            
             SizedBox(height: 20),
             Row(
               children: [
-                Expanded(child: ElevatedButton(onPressed: () => _captureAndSave(false), child: Text("DESCARGAR"))),
+                Expanded(child: ElevatedButton(onPressed: () => _exportar(false), child: Text("DESCARGAR"))),
                 SizedBox(width: 10),
-                Expanded(child: OutlinedButton(onPressed: () => _captureAndSave(true), child: Text("COMPARTIR"))),
+                Expanded(child: OutlinedButton(onPressed: () => _exportar(true), child: Text("COMPARTIR"))),
               ],
-            )
+            ),
           ],
         ),
       ),
