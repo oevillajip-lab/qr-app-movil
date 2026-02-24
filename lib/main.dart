@@ -17,28 +17,21 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  // --- CONTROLADORES DINÁMICOS ---
-  final TextEditingController _c1 = TextEditingController(text: "www.comagro.com.py");
+  // --- ARRANCA TOTALMENTE VACÍO ---
+  final TextEditingController _c1 = TextEditingController();
   final TextEditingController _c2 = TextEditingController();
   final TextEditingController _c3 = TextEditingController();
   final TextEditingController _c4 = TextEditingController();
   final TextEditingController _c5 = TextEditingController();
 
-  // --- VARIABLES DEL CÓDIGO PADRE ---
   String _qrType = "Sitio Web (URL)";
   String _estilo = "Liquid Pro (Gusano)";
-  
-  // Colores del QR
   String _qrColorMode = "Degradado Custom";
   Color _qrC1 = Colors.black;
   Color _qrC2 = Color(0xFF1565C0);
-  
-  // Ojos Custom
   bool _customEyes = false;
   Color _eyeExt = Colors.black;
   Color _eyeInt = Colors.black;
-
-  // Fondo
   String _bgMode = "Blanco (Default)";
   Color _bgC1 = Colors.white;
   Color _bgC2 = Color(0xFFF0F0F0);
@@ -46,8 +39,9 @@ class _MainScreenState extends State<MainScreen> {
   File? _logo;
   GlobalKey _qrKey = GlobalKey();
 
-  // --- GENERADOR DE CADENA DE DATOS ---
   String _getFinalData() {
+    if (_c1.text.trim().isEmpty) return ""; // Retorna vacío si no hay texto
+    
     switch (_qrType) {
       case "Sitio Web (URL)": return _c1.text;
       case "Red WiFi": return "WIFI:T:WPA;S:${_c1.text};P:${_c2.text};;";
@@ -85,7 +79,6 @@ class _MainScreenState extends State<MainScreen> {
     } catch (e) { print(e); }
   }
 
-  // Helper para elegir colores simples
   void _pickColor(Color current, Function(Color) onColorSelected) {
     showDialog(
       context: context,
@@ -106,30 +99,33 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildDynamicInputs() {
     List<Widget> fields = [];
     if (_qrType == "Sitio Web (URL)" || _qrType == "Texto Libre") {
-      fields.add(TextField(controller: _c1, decoration: InputDecoration(labelText: "Contenido", filled: true, fillColor: Colors.white)));
+      fields.add(TextField(controller: _c1, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Contenido", filled: true, fillColor: Colors.white)));
     } else if (_qrType == "Red WiFi") {
-      fields.add(TextField(controller: _c1, decoration: InputDecoration(labelText: "Nombre de la Red (SSID)")));
-      fields.add(TextField(controller: _c2, decoration: InputDecoration(labelText: "Contraseña")));
+      fields.add(TextField(controller: _c1, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Nombre de la Red (SSID)")));
+      fields.add(TextField(controller: _c2, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Contraseña")));
     } else if (_qrType == "VCard (Contacto)") {
-      fields.add(Row(children: [Expanded(child: TextField(controller: _c1, decoration: InputDecoration(labelText: "Nombre"))), SizedBox(width: 10), Expanded(child: TextField(controller: _c2, decoration: InputDecoration(labelText: "Apellido")))]));
-      fields.add(TextField(controller: _c3, decoration: InputDecoration(labelText: "Empresa")));
-      fields.add(TextField(controller: _c4, decoration: InputDecoration(labelText: "Teléfono", keyboardType: TextInputType.phone)));
-      fields.add(TextField(controller: _c5, decoration: InputDecoration(labelText: "E-mail", keyboardType: TextInputType.emailAddress)));
+      fields.add(Row(children: [Expanded(child: TextField(controller: _c1, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Nombre"))), SizedBox(width: 10), Expanded(child: TextField(controller: _c2, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Apellido")))]));
+      fields.add(TextField(controller: _c3, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Empresa")));
+      fields.add(TextField(controller: _c4, onChanged: (v)=>setState((){}), keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Teléfono")));
+      fields.add(TextField(controller: _c5, onChanged: (v)=>setState((){}), keyboardType: TextInputType.emailAddress, decoration: InputDecoration(labelText: "E-mail")));
     } else if (_qrType == "Teléfono") {
-      fields.add(TextField(controller: _c1, decoration: InputDecoration(labelText: "Número (Ej: +595...)", keyboardType: TextInputType.phone)));
+      fields.add(TextField(controller: _c1, onChanged: (v)=>setState((){}), keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Número (Ej: +595...)")));
     } else if (_qrType == "E-mail") {
-      fields.add(TextField(controller: _c1, decoration: InputDecoration(labelText: "Email Destino", keyboardType: TextInputType.emailAddress)));
-      fields.add(TextField(controller: _c2, decoration: InputDecoration(labelText: "Asunto")));
-      fields.add(TextField(controller: _c3, decoration: InputDecoration(labelText: "Mensaje")));
+      fields.add(TextField(controller: _c1, onChanged: (v)=>setState((){}), keyboardType: TextInputType.emailAddress, decoration: InputDecoration(labelText: "Email Destino")));
+      fields.add(TextField(controller: _c2, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Asunto")));
+      fields.add(TextField(controller: _c3, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Mensaje")));
     } else if (_qrType == "SMS (Mensaje)" || _qrType == "WhatsApp") {
-      fields.add(TextField(controller: _c1, decoration: InputDecoration(labelText: "Número (Ej: +595...)", keyboardType: TextInputType.phone)));
-      fields.add(TextField(controller: _c2, decoration: InputDecoration(labelText: "Mensaje")));
+      fields.add(TextField(controller: _c1, onChanged: (v)=>setState((){}), keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: "Número (Ej: +595...)")));
+      fields.add(TextField(controller: _c2, onChanged: (v)=>setState((){}), decoration: InputDecoration(labelText: "Mensaje")));
     }
     return Column(children: fields.map((f) => Padding(padding: EdgeInsets.only(bottom: 10), child: f)).toList());
   }
 
   @override
   Widget build(BuildContext context) {
+    String finalData = _getFinalData();
+    bool isDataEmpty = finalData.isEmpty;
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(title: Text("CÓDIGO PADRE", style: TextStyle(fontWeight: FontWeight.bold)), backgroundColor: Colors.black, centerTitle: true),
@@ -138,7 +134,6 @@ class _MainScreenState extends State<MainScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. CONTENIDO
             Card(
               elevation: 2,
               child: Padding(
@@ -162,7 +157,6 @@ class _MainScreenState extends State<MainScreen> {
             ),
             SizedBox(height: 10),
 
-            // 2. DISEÑO VISUAL
             Card(
               elevation: 2,
               child: Padding(
@@ -239,7 +233,6 @@ class _MainScreenState extends State<MainScreen> {
             ),
             SizedBox(height: 10),
 
-            // 3. LOGO
             ElevatedButton.icon(
               onPressed: _pickLogo, icon: Icon(Icons.image), label: Text(_logo == null ? "CARGAR LOGO (Opcional)" : "CAMBIAR LOGO"),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white, padding: EdgeInsets.all(15))
@@ -248,7 +241,6 @@ class _MainScreenState extends State<MainScreen> {
             
             SizedBox(height: 25),
             
-            // --- RENDERIZADOR NATIVO ---
             Center(
               child: RepaintBoundary(
                 key: _qrKey,
@@ -259,13 +251,16 @@ class _MainScreenState extends State<MainScreen> {
                     gradient: _bgMode == "Degradado" ? LinearGradient(colors: [_bgC1, _bgC2], begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
                   ),
                   child: Center(
-                    child: Stack(
+                    child: isDataEmpty 
+                    // MENSAJE DE ESPERA ELEGANTE
+                    ? Text("Esperando contenido...", style: TextStyle(color: Colors.grey, fontSize: 16))
+                    : Stack(
                       alignment: Alignment.center,
                       children: [
                         CustomPaint(
                           size: Size(260, 260),
                           painter: QrMasterPainter(
-                            data: _getFinalData(),
+                            data: finalData,
                             estilo: _estilo,
                             hasLogo: _logo != null,
                             colorMode: _qrColorMode,
@@ -293,9 +288,9 @@ class _MainScreenState extends State<MainScreen> {
             SizedBox(height: 25),
             Row(
               children: [
-                Expanded(child: ElevatedButton(onPressed: () => _exportar(false), child: Text("DESCARGAR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: EdgeInsets.symmetric(vertical: 15)))),
+                Expanded(child: ElevatedButton(onPressed: isDataEmpty ? null : () => _exportar(false), child: Text("DESCARGAR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: EdgeInsets.symmetric(vertical: 15)))),
                 SizedBox(width: 10),
-                Expanded(child: OutlinedButton(onPressed: () => _exportar(true), child: Text("COMPARTIR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 15)))),
+                Expanded(child: OutlinedButton(onPressed: isDataEmpty ? null : () => _exportar(true), child: Text("COMPARTIR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 15)))),
               ],
             ),
             SizedBox(height: 30),
@@ -306,7 +301,6 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// --- PINTOR MATEMÁTICO DEL CÓDIGO PADRE ---
 class QrMasterPainter extends CustomPainter {
   final String data;
   final String estilo;
@@ -341,9 +335,12 @@ class QrMasterPainter extends CustomPainter {
     final paintEyeInt = Paint()..isAntiAlias = true..color = customEyes ? eyeInt : qrC1;
     if (!customEyes && colorMode == "Degradado Custom") paintEyeInt.shader = paintBody.shader;
 
-    int skipStart = (modules ~/ 2) - 4; // Ampliamos ligeramente el aura para que el logo respire mejor
+    int skipStart = (modules ~/ 2) - 4; 
     int skipEnd = (modules ~/ 2) + 4;
     bool isEye(int r, int c) => (r < 7 && c < 7) || (r < 7 && c >= modules - 7) || (r >= modules - 7 && c < 7);
+
+    // FIX MICRO-DIVISIONES: Añadimos 0.5 px de overlap (solapamiento) matemático
+    double overlap = 0.5;
 
     for (int r = 0; r < modules; r++) {
       for (int c = 0; c < modules; c++) {
@@ -355,24 +352,25 @@ class QrMasterPainter extends CustomPainter {
           double y = r * tileSize;
 
           if (estilo == "Liquid Pro (Gusano)") {
-            RRect rrect = RRect.fromRectAndRadius(Rect.fromLTWH(x+1, y+1, tileSize-2, tileSize-2), Radius.circular(tileSize * 0.4));
+            RRect rrect = RRect.fromRectAndRadius(Rect.fromLTWH(x+0.5, y+0.5, tileSize-1, tileSize-1), Radius.circular(tileSize * 0.4));
             canvas.drawRRect(rrect, paintBody);
             if (c + 1 < modules && qrImage.isDark(r, c + 1) && (!hasLogo || !(r >= skipStart && r <= skipEnd && c+1 >= skipStart && c+1 <= skipEnd))) {
-              canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + 1, tileSize, tileSize - 2), paintBody);
+              canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + 0.5, tileSize + overlap, tileSize - 1), paintBody);
             }
             if (r + 1 < modules && qrImage.isDark(r + 1, c) && (!hasLogo || !(r+1 >= skipStart && r+1 <= skipEnd && c >= skipStart && c <= skipEnd))) {
-              canvas.drawRect(Rect.fromLTWH(x + 1, y + tileSize / 2, tileSize - 2, tileSize), paintBody);
+              canvas.drawRect(Rect.fromLTWH(x + 0.5, y + tileSize / 2, tileSize - 1, tileSize + overlap), paintBody);
             }
           } else if (estilo == "Circular (Puntos)") {
             canvas.drawCircle(Offset(x + tileSize / 2, y + tileSize / 2), tileSize * 0.42, paintBody);
           } else if (estilo == "Barras (Vertical)") {
-            RRect rrect = RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, tileSize), Radius.circular(tileSize * 0.25));
+            RRect rrect = RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y - 0.1, tileSize * 0.8, tileSize + overlap), Radius.circular(tileSize * 0.25));
             canvas.drawRRect(rrect, paintBody);
             if (r + 1 < modules && qrImage.isDark(r + 1, c) && !isEye(r + 1, c) && (!hasLogo || !(r+1 >= skipStart && r+1 <= skipEnd && c >= skipStart && c <= skipEnd))) {
-              canvas.drawRect(Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2, tileSize * 0.8, tileSize), paintBody);
+              canvas.drawRect(Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2, tileSize * 0.8, tileSize + overlap), paintBody);
             }
           } else {
-            canvas.drawRect(Rect.fromLTWH(x, y, tileSize, tileSize), paintBody);
+            // FIX MICRO-DIVISION NORMAL: Expansión microscópica
+            canvas.drawRect(Rect.fromLTWH(x - 0.1, y - 0.1, tileSize + overlap, tileSize + overlap), paintBody);
           }
         }
       }
