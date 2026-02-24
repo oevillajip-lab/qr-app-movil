@@ -1,5 +1,5 @@
 name: qr_app
-description: Motor de QR Nativo
+description: Motor Nativo Codigo Padre
 version: 1.0.0+1
 
 environment:
@@ -8,7 +8,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  qr_flutter: ^4.1.0        # El motor que genera la matriz
+  qr: ^3.0.1                # Genera la matriz de bits
   image_picker: ^1.0.4 
   image_gallery_saver: ^2.0.3
   permission_handler: ^11.0.1
