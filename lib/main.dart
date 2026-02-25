@@ -5,6 +5,7 @@ import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:image/image.dart' as img_lib;
+import 'package:share_plus/share_plus.dart'; // NUEVO: Importación para compartir
 import 'dart:typed_data';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -132,13 +133,15 @@ class _MainScreenState extends State<MainScreen> {
       _logoImage = image;
       _outerMask = finalMask;
       if (_qrColorMode == "Automático (Logo)") {
-        _qrC1 = palette.vibrantColor?.color ??
-            palette.darkVibrantColor?.color ??
-            palette.dominantColor?.color ??
-            Colors.black;
-        _qrC2 = palette.darkMutedColor?.color ??
-            palette.lightVibrantColor?.color ??
-            _qrC1.withOpacity(0.7);
+        // RETOQUE 1: Forzar colores oscuros/fuertes para el C1, y el secundario para C2.
+        _qrC1 = palette.darkVibrantColor?.color ?? 
+                palette.darkMutedColor?.color ?? 
+                palette.dominantColor?.color ?? 
+                Colors.black;
+        // Si no hay secundario fuerte, se repite C1 para que sea un color sólido
+        _qrC2 = palette.vibrantColor?.color ?? 
+                palette.lightVibrantColor?.color ?? 
+                _qrC1; 
       }
     });
   }
@@ -255,17 +258,27 @@ class _MainScreenState extends State<MainScreen> {
                 },
                 icon: const Icon(Icons.image),
                 label: Text(_logoBytes == null ? "CARGAR LOGO" : "LOGO CARGADO ✅"),
+                // RETOQUE 4: Botón Negro, letra blanca
                 style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.black, foregroundColor: Colors.white)),
+            
+            // RETOQUE 1: Advertencia sobre logos blancos
+            const Padding(
+              padding: EdgeInsets.only(top: 8.0, bottom: 4.0),
+              child: Text("💡 Nota: Si su diseño es blanco, recuerde seleccionar un fondo oscuro.", style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic)),
+            ),
+
             if (_logoBytes != null) ...[
               const SizedBox(height: 12),
               Text("Tamaño del logo: ${_logoSize.toInt()}px (Tope Seguro)"),
-              Slider(value: _logoSize, min: 30, max: 85, divisions: 11, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v)),
+              // RETOQUE 2: Freno funcional. Tope máximo 75px.
+              Slider(value: _logoSize, min: 30, max: 75, divisions: 9, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v)),
             ],
           ])),
 
           _buildCard("5. Ajuste de Aura (Separación QR ↔ Logo)", Column(children: [
             Text("Margen: ${_auraSize.toInt()} Nivel(es)"),
-            Slider(value: _auraSize, min: 1, max: 3, divisions: 2, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v)),
+            // RETOQUE 2: Freno funcional. Tope máximo 3 niveles.
+            Slider(value: _auraSize, min: 0, max: 3, divisions: 3, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v)),
           ])),
 
           const SizedBox(height: 10),
@@ -295,7 +308,29 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           const SizedBox(height: 25),
-          ElevatedButton(onPressed: isEmpty ? null : () => _exportar(), style: ElevatedButton.styleFrom(backgroundColor: Colors.green[800], foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 60)), child: const Text("GUARDAR EN GALERÍA")),
+          
+          // RETOQUE 3 Y 4: Botones Guardar y Compartir (Blancos y Negros)
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isEmpty ? null : () => _exportar(), 
+                  icon: const Icon(Icons.save_alt),
+                  label: const Text("GUARDAR"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 60))
+                ),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isEmpty ? null : () => _compartir(), 
+                  icon: const Icon(Icons.share),
+                  label: const Text("COMPARTIR"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 60))
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 40),
         ]),
       ),
@@ -330,7 +365,28 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildColorPicker(String label, Color c1, Color c2, Function(Color) onC1, Function(Color) onC2, {bool isGrad = false}) { return Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [Text(label), const Spacer(), _colorBtn(c1, onC1), if (isGrad) ...[const SizedBox(width: 15), _colorBtn(c2, onC2)]])); }
   Widget _colorBtn(Color current, Function(Color) onTap) { return GestureDetector(onTap: () => _showPalette(onTap), child: CircleAvatar(backgroundColor: current, radius: 20, child: Icon(Icons.colorize, size: 16, color: current == Colors.white ? Colors.black : Colors.white))); }
   void _showPalette(Function(Color) onSelect) { showDialog(context: context, builder: (ctx) => AlertDialog(content: Wrap(spacing: 12, runSpacing: 12, children: [Colors.black, Colors.white, Colors.red, Colors.blue, Colors.green, Colors.orange, Colors.purple, const Color(0xFF1565C0), Colors.grey].map((c) => GestureDetector(onTap: () { onSelect(c); Navigator.pop(ctx); }, child: CircleAvatar(backgroundColor: c, radius: 25))).toList()))); }
-  Future<void> _exportar() async { final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary; final ui.Image image = await boundary.toImage(pixelRatio: 4.0); final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png); await ImageGallerySaver.saveImage(byteData!.buffer.asUint8List()); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ QR Guardado"))); }
+  
+  Future<void> _exportar() async { 
+    final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary; 
+    final ui.Image image = await boundary.toImage(pixelRatio: 4.0); 
+    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png); 
+    await ImageGallerySaver.saveImage(byteData!.buffer.asUint8List()); 
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ QR Guardado"))); 
+  }
+
+  // RETOQUE 3: Función para compartir el QR generado
+  Future<void> _compartir() async {
+    final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final ui.Image image = await boundary.toImage(pixelRatio: 4.0);
+    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final Uint8List pngBytes = byteData!.buffer.asUint8List();
+
+    final tempDir = await getTemporaryDirectory();
+    final file = await File('${tempDir.path}/qr_generado.png').create();
+    await file.writeAsBytes(pngBytes);
+
+    await Share.shareXFiles([XFile(file.path)], text: 'Generado con QR + Logo');
+  }
 }
 
 enum EyeStyle { rect, circ, diamond }
@@ -424,11 +480,10 @@ class QrMasterPainter extends CustomPainter {
       return true;
     }
 
-    // ── NUEVO MOTOR DE DIBUJO FLUIDO PARA GUSANO Y BARRAS ────────────────
+    // ── MOTOR DE DIBUJO FLUIDO INTACTO (CÓDIGO PRO) ────────────────
     final Path liquidPath = Path();
     final Path barrasPath = Path();
 
-    // Configuración del Pincel Líquido (Trazo grueso y redondo para fluidez total)
     final Paint liquidPaint = Paint()
       ..isAntiAlias = true
       ..style = PaintingStyle.stroke
@@ -452,32 +507,25 @@ class QrMasterPainter extends CustomPainter {
         final double centerY = y + tileSize / 2;
 
         if (estilo.contains("Gusano")) {
-          // Trazo base para mantener el módulo como círculo aislado si no se conecta
           liquidPath.moveTo(centerX, centerY);
           liquidPath.lineTo(centerX, centerY);
 
-          // Si el vecino derecho está activo y seguro, tira la pincelada
           if (isSafeDark(r, c + 1)) {
             liquidPath.moveTo(centerX, centerY);
             liquidPath.lineTo(centerX + tileSize, centerY);
           }
-          // Si el vecino inferior está activo y seguro, tira la pincelada
           if (isSafeDark(r + 1, c)) {
             liquidPath.moveTo(centerX, centerY);
             liquidPath.lineTo(centerX, centerY + tileSize);
           }
 
         } else if (estilo.contains("Barras")) {
-          // Si es el inicio de una barra vertical
           if (r == 0 || !isSafeDark(r - 1, c)) {
             int endR = r;
-            // Busca hasta dónde llega la barra de forma segura
             while (endR + 1 < modules && isSafeDark(endR + 1, c)) {
               endR++;
             }
-            // Altura total de la barra
             final double barHeight = (endR - r + 1) * tileSize;
-            // Dibuja una barra sólida y continua
             final Rect barRect = Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, barHeight);
             barrasPath.addRRect(RRect.fromRectAndRadius(barRect, Radius.circular(tileSize * 0.3)));
           }
@@ -505,7 +553,6 @@ class QrMasterPainter extends CustomPainter {
       }
     }
 
-    // Plasma los trazados unificados en el Canvas
     if (estilo.contains("Gusano")) {
       canvas.drawPath(liquidPath, liquidPaint);
     } else if (estilo.contains("Barras")) {
