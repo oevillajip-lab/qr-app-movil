@@ -13,6 +13,7 @@ import 'package:flutter/rendering.dart';
 void main() => runApp(const MaterialApp(
     home: SplashScreen(), debugShowCheckedModeBanner: false));
 
+// ── Splash ────────────────────────────────────────────────────────
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
   @override
@@ -41,6 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
+// ── Main Screen ───────────────────────────────────────────────────
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
   @override
@@ -70,9 +72,9 @@ class _MainScreenState extends State<MainScreen> {
 
   Uint8List? _logoBytes;
   img_lib.Image? _logoImage;
-  List<List<bool>>? _outerMask;
+  List<List<bool>>? _outerMask; 
   double _logoSize = 65.0;
-  double _auraSize = 1.0;
+  double _auraSize = 1.0; 
 
   final GlobalKey _qrKey = GlobalKey();
 
@@ -117,7 +119,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       if (firstY != -1) {
         for (int y = firstY; y <= lastY; y++) {
-          if (rowBound[y][x]) finalMask[y][x] = true;
+          if (rowBound[y][x]) finalMask[y][x] = true; 
         }
       }
     }
@@ -369,7 +371,6 @@ class QrMasterPainter extends CustomPainter {
       paint.color = qrC1;
     }
 
-    // ── Exclusion mask — INTACTO ─────────────────────────────────
     List<List<bool>> exclusionMask = List.generate(modules, (_) => List.filled(modules, false));
     if (logoImage != null && outerMask != null) {
       final double canvasSize = 270.0;
@@ -415,128 +416,103 @@ class QrMasterPainter extends CustomPainter {
       }
     }
 
-    // ── isSafeDark — INTACTO ─────────────────────────────────────
     bool isSafeDark(int r, int c) {
       if (r < 0 || r >= modules || c < 0 || c >= modules) return false;
       if (!qrImage.isDark(r, c)) return false;
-      if (_isEyeModule(r, c, modules)) return false;
+      if (_isEyeModule(r, c, modules) && estilo != "Normal (Cuadrado)") return false;
       if (exclusionMask[r][c]) return false;
       return true;
     }
 
-    // ── Módulos de datos ─────────────────────────────────────────
+    // ── NUEVO MOTOR DE DIBUJO FLUIDO PARA GUSANO Y BARRAS ────────────────
+    final Path liquidPath = Path();
+    final Path barrasPath = Path();
+
+    // Configuración del Pincel Líquido (Trazo grueso y redondo para fluidez total)
+    final Paint liquidPaint = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = tileSize
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    if (gradShader != null) {
+      liquidPaint.shader = gradShader;
+    } else {
+      liquidPaint.color = qrC1;
+    }
+
     for (int r = 0; r < modules; r++) {
       for (int c = 0; c < modules; c++) {
         if (!isSafeDark(r, c)) continue;
 
         final double x = c * tileSize;
         final double y = r * tileSize;
+        final double centerX = x + tileSize / 2;
+        final double centerY = y + tileSize / 2;
 
         if (estilo.contains("Gusano")) {
-          // ── LIQUID PRO: Path único con esquinas adaptativas ──
-          // Cada esquina se redondea SOLO si NO hay vecino en esa dirección.
-          // Si hay vecino → esquina plana (radio ~0) para fusión perfecta.
-          // El resultado: los módulos conectados fluyen como un gusano continuo.
-          final bool up    = isSafeDark(r - 1, c);
-          final bool right = isSafeDark(r, c + 1);
-          final bool down  = isSafeDark(r + 1, c);
-          final bool left  = isSafeDark(r, c - 1);
+          // Trazo base para mantener el módulo como círculo aislado si no se conecta
+          liquidPath.moveTo(centerX, centerY);
+          liquidPath.lineTo(centerX, centerY);
 
-          final double rad = tileSize * 0.38; // radio máximo de esquina
-          // Radio de cada esquina: grande si libre, mínimo si conectado
-          final double rTL = (up   || left)  ? tileSize * 0.04 : rad;
-          final double rTR = (up   || right) ? tileSize * 0.04 : rad;
-          final double rBR = (down || right) ? tileSize * 0.04 : rad;
-          final double rBL = (down || left)  ? tileSize * 0.04 : rad;
-
-          // Path único que describe el módulo completo con las 4 esquinas
-          final path = Path();
-          // Top edge: left→right
-          path.moveTo(x + rTL, y);
-          path.lineTo(x + tileSize - rTR, y);
-          path.quadraticBezierTo(x + tileSize, y, x + tileSize, y + rTR);
-          // Right edge: top→bottom
-          path.lineTo(x + tileSize, y + tileSize - rBR);
-          path.quadraticBezierTo(x + tileSize, y + tileSize, x + tileSize - rBR, y + tileSize);
-          // Bottom edge: right→left
-          path.lineTo(x + rBL, y + tileSize);
-          path.quadraticBezierTo(x, y + tileSize, x, y + tileSize - rBL);
-          // Left edge: bottom→top
-          path.lineTo(x, y + rTL);
-          path.quadraticBezierTo(x, y, x + rTL, y);
-          path.close();
-          canvas.drawPath(path, paint);
+          // Si el vecino derecho está activo y seguro, tira la pincelada
+          if (isSafeDark(r, c + 1)) {
+            liquidPath.moveTo(centerX, centerY);
+            liquidPath.lineTo(centerX + tileSize, centerY);
+          }
+          // Si el vecino inferior está activo y seguro, tira la pincelada
+          if (isSafeDark(r + 1, c)) {
+            liquidPath.moveTo(centerX, centerY);
+            liquidPath.lineTo(centerX, centerY + tileSize);
+          }
 
         } else if (estilo.contains("Barras")) {
-          // ── BARRAS: Path único vertical con caps solo en extremos libres ──
-          // Si hay vecino arriba → cap superior plano (se fusiona con la barra de arriba).
-          // Si hay vecino abajo → cap inferior plano (se fusiona con la barra de abajo).
-          // Solo los extremos sin vecino reciben el cap redondeado.
-          // El resultado: columnas continuas con remates redondeados solo al inicio/fin.
-          final bool up   = isSafeDark(r - 1, c);
-          final bool down = isSafeDark(r + 1, c);
-
-          final double bx     = x + tileSize * 0.12; // margen horizontal de la barra
-          final double bw     = tileSize * 0.76;      // ancho de la barra
-          final double capRad = bw / 2;               // radio del cap = semicírculo
-
-          // Extensión para solapar con el módulo vecino y eliminar la junta
-          final double overlap = up   ? tileSize * 0.5 : 0.0;
-          final double overlapB = down ? tileSize * 0.5 : 0.0;
-
-          final double top    = y - overlap;
-          final double bottom = y + tileSize + overlapB;
-
-          final path = Path();
-          if (!up) {
-            // Cap superior redondeado (semicírculo)
-            path.addArc(Rect.fromLTWH(bx, top, bw, bw), 3.14159, 3.14159);
-            path.lineTo(bx + bw, top + bw / 2);
-          } else {
-            // Cap superior plano (fusión con barra de arriba)
-            path.moveTo(bx, top);
-            path.lineTo(bx + bw, top);
+          // Si es el inicio de una barra vertical
+          if (r == 0 || !isSafeDark(r - 1, c)) {
+            int endR = r;
+            // Busca hasta dónde llega la barra de forma segura
+            while (endR + 1 < modules && isSafeDark(endR + 1, c)) {
+              endR++;
+            }
+            // Altura total de la barra
+            final double barHeight = (endR - r + 1) * tileSize;
+            // Dibuja una barra sólida y continua
+            final Rect barRect = Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, barHeight);
+            barrasPath.addRRect(RRect.fromRectAndRadius(barRect, Radius.circular(tileSize * 0.3)));
           }
-
-          if (!down) {
-            // Cap inferior redondeado (semicírculo)
-            path.lineTo(bx + bw, bottom - bw / 2);
-            path.addArc(Rect.fromLTWH(bx, bottom - bw, bw, bw), 0, 3.14159);
-          } else {
-            // Cap inferior plano (fusión con barra de abajo)
-            path.lineTo(bx + bw, bottom);
-            path.lineTo(bx, bottom);
-          }
-          path.close();
-          canvas.drawPath(path, paint);
 
         } else if (estilo.contains("Puntos")) {
-          // INTACTO
           double hash = ((r * 13 + c * 29) % 100) / 100.0;
           double radius = tileSize * 0.35 + (tileSize * 0.15 * hash);
-          canvas.drawCircle(Offset(x + tileSize / 2, y + tileSize / 2), radius, paint);
+          canvas.drawCircle(Offset(centerX, centerY), radius, paint);
 
         } else if (estilo.contains("Diamantes")) {
-          // INTACTO
           double hash = ((r * 17 + c * 31) % 100) / 100.0;
           double scale = 0.65 + (0.5 * hash);
           double offset = tileSize * (1.0 - scale) / 2;
           Path path = Path()
-            ..moveTo(x + tileSize / 2, y + offset)
-            ..lineTo(x + tileSize - offset, y + tileSize / 2)
-            ..lineTo(x + tileSize / 2, y + tileSize - offset)
-            ..lineTo(x + offset, y + tileSize / 2)
+            ..moveTo(centerX, y + offset)
+            ..lineTo(x + tileSize - offset, centerY)
+            ..lineTo(centerX, y + tileSize - offset)
+            ..lineTo(x + offset, centerY)
             ..close();
           canvas.drawPath(path, paint);
 
-        } else {
-          // INTACTO — Normal cuadrado
+        } else { 
           canvas.drawRect(Rect.fromLTWH(x, y, tileSize + 0.3, tileSize + 0.3), paint);
         }
       }
     }
 
-    // ── Ojos — INTACTOS ──────────────────────────────────────────
+    // Plasma los trazados unificados en el Canvas
+    if (estilo.contains("Gusano")) {
+      canvas.drawPath(liquidPath, liquidPaint);
+    } else if (estilo.contains("Barras")) {
+      canvas.drawPath(barrasPath, paint);
+    }
+
+    // ── Ojos ─────────────────────────────────────────────────────
     final pE = Paint()..isAntiAlias = true;
     final pI = Paint()..isAntiAlias = true;
     if (customEyes) { pE.color = eyeExt; pI.color = eyeInt; } else if (gradShader != null) { pE.shader = gradShader; pI.shader = gradShader; } else { pE.color = qrC1; pI.color = qrC1; }
@@ -550,7 +526,6 @@ class QrMasterPainter extends CustomPainter {
     _drawEye(canvas, 0, (modules - 7) * tileSize, tileSize, pE, pI, eStyle);
   }
 
-  // ── _drawEye — INTACTO ────────────────────────────────────────
   void _drawEye(Canvas canvas, double x, double y, double t, Paint pE, Paint pI, EyeStyle eStyle) {
     final double s = 7 * t;
     if (eStyle == EyeStyle.circ) {
@@ -567,6 +542,5 @@ class QrMasterPainter extends CustomPainter {
       canvas.drawRect(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.4 * t), pI);
     }
   }
-
   @override bool shouldRepaint(CustomPainter old) => true;
 }
