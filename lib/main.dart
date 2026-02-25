@@ -259,14 +259,14 @@ class _MainScreenState extends State<MainScreen> {
             if (_logoBytes != null) ...[
               const SizedBox(height: 12),
               Text("Tamaño del logo: ${_logoSize.toInt()}px (Tope Seguro)"),
-              // FRENO DE SEGURIDAD 1: Tamaño máximo 85 para garantizar lectura
+              // Freno de Seguridad para tamaño de logo
               Slider(value: _logoSize, min: 30, max: 85, divisions: 11, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v)),
             ],
           ])),
 
           _buildCard("5. Ajuste de Aura (Separación QR ↔ Logo)", Column(children: [
             Text("Margen: ${_auraSize.toInt()} Nivel(es)"),
-            // FRENO DE SEGURIDAD 2: Aura máxima 3 para garantizar lectura
+            // Freno de Seguridad para Aura
             Slider(value: _auraSize, min: 1, max: 3, divisions: 2, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v)),
           ])),
 
@@ -382,7 +382,6 @@ class QrMasterPainter extends CustomPainter {
 
       List<List<bool>> baseLogoModules = List.generate(modules, (_) => List.filled(modules, false));
 
-      // MUESTREO MULTI-PUNTO: Garantiza cero contacto QR/Logo
       for (int r = 0; r < modules; r++) {
         for (int c = 0; c < modules; c++) {
           bool hit = false;
@@ -419,11 +418,11 @@ class QrMasterPainter extends CustomPainter {
       }
     }
 
-    // Limpieza Total de Ojos para evitar Glitch de Color
+    // ARREGLO DE GLITCH EN OJOS: Evita que se dibujen bloques por debajo de los ojos.
     bool isSafeDark(int r, int c) {
       if (r < 0 || r >= modules || c < 0 || c >= modules) return false;
       if (!qrImage.isDark(r, c)) return false;
-      if (_isEyeModule(r, c, modules)) return false; // Nunca dibuja debajo del ojo
+      if (_isEyeModule(r, c, modules)) return false; // El área del ojo queda 100% libre para _drawEye
       if (exclusionMask[r][c]) return false;
       return true;
     }
@@ -439,17 +438,18 @@ class QrMasterPainter extends CustomPainter {
         if (estilo.contains("Gusano")) {
           bool right = isSafeDark(r, c + 1);
           bool bottom = isSafeDark(r + 1, c);
-          bool bottomRight = isSafeDark(r + 1, c + 1);
 
-          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, tileSize, tileSize), Radius.circular(tileSize * 0.4)), paint);
-          if (right) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y, tileSize / 2 + 0.5, tileSize), paint);
-          if (bottom) canvas.drawRect(Rect.fromLTWH(x, y + tileSize / 2, tileSize, tileSize / 2 + 0.5), paint);
-          if (right && bottom && bottomRight) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + tileSize / 2, tileSize / 2 + 0.5, tileSize / 2 + 0.5), paint);
+          // RESTAURADO EXACTO: El pegamento visual de +0.5 y -0.5 píxeles que da el efecto líquido.
+          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + 0.5, y + 0.5, tileSize - 0.5, tileSize - 0.5), Radius.circular(tileSize * 0.35)), paint);
+          if (right) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + 0.5, tileSize, tileSize - 0.5), paint);
+          if (bottom) canvas.drawRect(Rect.fromLTWH(x + 0.5, y + tileSize / 2, tileSize - 0.5, tileSize), paint);
 
         } else if (estilo.contains("Barras")) {
           bool bottom = isSafeDark(r + 1, c);
-          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, tileSize), Radius.circular(tileSize * 0.3)), paint);
-          if (bottom) canvas.drawRect(Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2, tileSize * 0.8, tileSize / 2 + 0.5), paint);
+          
+          // RESTAURADO EXACTO: Efecto barra suave.
+          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, tileSize + 0.5), Radius.circular(tileSize * 0.3)), paint);
+          if (bottom) canvas.drawRect(Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2, tileSize * 0.8, tileSize), paint);
 
         } else if (estilo.contains("Puntos")) {
           double hash = ((r * 13 + c * 29) % 100) / 100.0;
@@ -457,9 +457,8 @@ class QrMasterPainter extends CustomPainter {
           canvas.drawCircle(Offset(x + tileSize / 2, y + tileSize / 2), radius, paint);
 
         } else if (estilo.contains("Diamantes")) {
-          // DIAMANTES ORGÁNICOS GRANDES
           double hash = ((r * 17 + c * 31) % 100) / 100.0;
-          double scale = 0.65 + (0.5 * hash); // Varian entre 65% y 115% de tamaño
+          double scale = 0.65 + (0.5 * hash);
           double offset = tileSize * (1.0 - scale) / 2;
           Path path = Path()
             ..moveTo(x + tileSize / 2, y + offset)
