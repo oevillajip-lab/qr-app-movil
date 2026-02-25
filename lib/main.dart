@@ -70,9 +70,11 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _logo = file;
       if (_qrColorMode == "Automático (Logo)") {
-        _qrC1 = palette.darkMutedColor?.color ?? palette.dominantColor?.color ?? Colors.black;
-        _qrC2 = palette.vibrantColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1;
+        // MEJORA DE CONTRASTE: Priorizar vibrantes intensos
+        _qrC1 = palette.vibrantColor?.color ?? palette.darkVibrantColor?.color ?? palette.dominantColor?.color ?? Colors.black;
+        _qrC2 = palette.darkMutedColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1.withOpacity(0.7);
       }
+      // MAPA DE COLISIÓN MEJORADO (Ignora fondo blanco de JPG)
       int res = 100; 
       _collisionMap = List.generate(res, (y) => List.generate(res, (x) {
         int px = (x * image.width ~/ res);
@@ -128,12 +130,13 @@ class _MainScreenState extends State<MainScreen> {
               if (_bgMode == "Degradado") DropdownButtonFormField<String>(decoration: const InputDecoration(labelText: "Dirección Fondo"), value: _bgGradDir, items: ["Vertical", "Horizontal", "Diagonal"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _bgGradDir = v!)),
             ]
           ])),
-          if (_logo != null) _buildCard("4. Ajuste de Aura (Contorno)", Column(children: [Text("Margen: ${_auraSize.toInt()}"), Slider(value: _auraSize, min: 1, max: 8, divisions: 7, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v))])),
+          _buildCard("4. Ajuste de Aura (Contorno)", Column(children: [Text("Margen: ${_auraSize.toInt()}"), Slider(value: _auraSize, min: 1, max: 10, divisions: 9, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v))])),
           ElevatedButton.icon(onPressed: () async { final img = await ImagePicker().pickImage(source: ImageSource.gallery); if (img != null) _processLogo(File(img.path)); }, icon: const Icon(Icons.image), label: Text(_logo == null ? "CARGAR LOGO" : "LOGO CARGADO ✅"), style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.black, foregroundColor: Colors.white)),
           const SizedBox(height: 30),
           RepaintBoundary(key: _qrKey, child: Container(width: 320, height: 320, decoration: BoxDecoration(color: _bgMode == "Transparente" ? Colors.transparent : (_bgMode == "Sólido (Color)" ? _bgC1 : Colors.white), gradient: _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null), child: Center(child: isEmpty ? const Text("Esperando contenido...", style: TextStyle(color: Colors.grey)) : Stack(alignment: Alignment.center, children: [CustomPaint(size: const Size(270, 270), painter: QrMasterPainter(data: finalData, estilo: _estilo, collisionMap: _collisionMap, auraSize: _auraSize, qrC1: _qrC1, qrC2: _qrC2, qrMode: _qrColorMode, qrDir: _qrGradDir, customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt)), if (_logo != null) Container(width: 65, height: 65, child: Image.file(_logo!, fit: BoxFit.contain))])))),
           const SizedBox(height: 25),
           ElevatedButton(onPressed: isEmpty ? null : () => _exportar(), child: const Text("GUARDAR EN GALERÍA"), style: ElevatedButton.styleFrom(backgroundColor: Colors.green[800], foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 60))),
+          const SizedBox(height: 40),
         ]),
       ),
     );
@@ -170,7 +173,9 @@ class QrMasterPainter extends CustomPainter {
   final double auraSize;
   final bool customEyes;
   final Color qrC1, qrC2, eyeExt, eyeInt;
+
   QrMasterPainter({required this.data, required this.estilo, required this.collisionMap, required this.auraSize, required this.qrC1, required this.qrC2, required this.qrMode, required this.qrDir, required this.customEyes, required this.eyeExt, required this.eyeInt});
+
   @override
   void paint(Canvas canvas, Size size) {
     final qrCode = QrCode(4, QrErrorCorrectLevel.H)..addData(data);
@@ -178,40 +183,63 @@ class QrMasterPainter extends CustomPainter {
     final int modules = qrImage.moduleCount;
     final double tileSize = size.width / modules;
     final paint = Paint()..isAntiAlias = true;
+
     if (qrMode != "Sólido (Un Color)") {
       Alignment beg = Alignment.topCenter; Alignment end = Alignment.bottomCenter;
       if (qrDir == "Horizontal") { beg = Alignment.centerLeft; end = Alignment.centerRight; }
       if (qrDir == "Diagonal") { beg = Alignment.topLeft; end = Alignment.bottomRight; }
       paint.shader = ui.Gradient.linear(Offset(size.width*beg.x, size.height*beg.y), Offset(size.width*end.x, size.height*end.y), [qrC1, qrC2]);
     } else { paint.color = qrC1; }
+
+    // Rango de módulos donde vive el logo (Centro 65x65 en área de 270)
+    double logoPxSize = 65.0;
+    double qrPxSize = size.width;
+    double startLogo = (qrPxSize - logoPxSize) / 2;
+    double endLogo = startLogo + logoPxSize;
+
     for (int r = 0; r < modules; r++) {
       for (int c = 0; c < modules; c++) {
         if (qrImage.isDark(r, c)) {
+          double x = c * tileSize;
+          double y = r * tileSize;
+
+          // INTEGRACIÓN REAL: ¿El módulo choca con el logo real?
           if (collisionMap.isNotEmpty) {
-            int mapX = (c * collisionMap.length ~/ modules);
-            int mapY = (r * collisionMap.length ~/ modules);
-            bool col = false; int m = auraSize.toInt();
-            for (int dy = -m; dy <= m; dy++) {
-              for (int dx = -m; dx <= m; dx++) {
-                int ny = mapY+dy; int nx = mapX+dx;
-                if (ny>=0 && ny<collisionMap.length && nx>=0 && nx<collisionMap.length && collisionMap[ny][nx]) { col=true; break; }
-              }
-              if (col) break;
-            }
-            if (col) continue;
+             // Traducir módulo a coordenada del logo
+             if (x >= startLogo - (auraSize * 2) && x <= endLogo + (auraSize * 2) && 
+                 y >= startLogo - (auraSize * 2) && y <= endLogo + (auraSize * 2)) {
+               
+               double relX = (x - startLogo) / logoPxSize;
+               double relY = (y - startLogo) / logoPxSize;
+               
+               int mapX = (relX * collisionMap.length).toInt();
+               int mapY = (relY * collisionMap.length).toInt();
+               
+               bool hit = false;
+               int m = auraSize.toInt();
+               for (int dy = -m; dy <= m; dy++) {
+                 for (int dx = -m; dx <= m; dx++) {
+                   int ny = mapY + dy; int nx = mapX + dx;
+                   if (ny >= 0 && ny < collisionMap.length && nx >= 0 && nx < collisionMap.length && collisionMap[ny][nx]) { hit = true; break; }
+                 }
+                 if (hit) break;
+               }
+               if (hit) continue;
+             }
           }
-          if (((r<7 && c<7) || (r<7 && c>=modules-7) || (r>=modules-7 && c<7)) && estilo != "Normal (Cuadrado)") continue;
-          double x = c * tileSize; double y = r * tileSize;
+
+          if (((r < 7 && c < 7) || (r < 7 && c >= modules - 7) || (r >= modules - 7 && c < 7)) && estilo != "Normal (Cuadrado)") continue;
+          
           if (estilo.contains("Gusano")) {
             canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x+0.5, y+0.5, tileSize-0.5, tileSize-0.5), Radius.circular(tileSize * 0.35)), paint);
-            if (c+1<modules && qrImage.isDark(r, c+1)) canvas.drawRect(Rect.fromLTWH(x+tileSize/2, y+0.5, tileSize, tileSize-0.5), paint);
-            if (r+1<modules && qrImage.isDark(r+1, c)) canvas.drawRect(Rect.fromLTWH(x+0.5, y+tileSize/2, tileSize-0.5, tileSize), paint);
+            if (c+1 < modules && qrImage.isDark(r, c+1)) canvas.drawRect(Rect.fromLTWH(x+tileSize/2, y+0.5, tileSize, tileSize-0.5), paint);
+            if (r+1 < modules && qrImage.isDark(r+1, c)) canvas.drawRect(Rect.fromLTWH(x+0.5, y+tileSize/2, tileSize-0.5, tileSize), paint);
           } else if (estilo.contains("Barras")) {
-            canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x+tileSize*0.1, y, tileSize*0.8, tileSize+0.5), Radius.circular(tileSize*0.3)), paint);
-            if (r+1<modules && qrImage.isDark(r+1, c)) canvas.drawRect(Rect.fromLTWH(x+tileSize*0.1, y+tileSize/2, tileSize*0.8, tileSize), paint);
+            canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize*0.1, y, tileSize*0.8, tileSize+0.5), Radius.circular(tileSize*0.3)), paint);
+            if (r+1 < modules && qrImage.isDark(r+1, c)) canvas.drawRect(Rect.fromLTWH(x + tileSize*0.1, y + tileSize/2, tileSize*0.8, tileSize), paint);
           } else if (estilo.contains("Puntos")) {
-            canvas.drawCircle(Offset(x+tileSize/2, y+tileSize/2), tileSize*0.45, paint);
-          } else { canvas.drawRect(Rect.fromLTWH(x, y, tileSize+0.3, tileSize+0.3), paint); }
+            canvas.drawCircle(Offset(x + tileSize/2, y + tileSize/2), tileSize * 0.45, paint);
+          } else { canvas.drawRect(Rect.fromLTWH(x, y, tileSize + 0.3, tileSize + 0.3), paint); }
         }
       }
     }
@@ -221,6 +249,7 @@ class QrMasterPainter extends CustomPainter {
     _drawEye(canvas, (modules-7)*tileSize, 0, tileSize, pE, pI, estilo.contains("Puntos"));
     _drawEye(canvas, 0, (modules-7)*tileSize, tileSize, pE, pI, estilo.contains("Puntos"));
   }
+
   void _drawEye(Canvas canvas, double x, double y, double t, Paint pE, Paint pI, bool circ) {
     double s = 7*t;
     if (circ) {
