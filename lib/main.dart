@@ -70,58 +70,75 @@ class _MainScreenState extends State<MainScreen> {
   Color _bgC1 = Colors.white;
   Color _bgC2 = const Color(0xFFF5F5F5);
 
-  // Logo procesado como PNG con alpha
-  Uint8List? _logoBytes;      // PNG con fondo removido (para mostrar en UI)
-  img_lib.Image? _logoImage;  // imagen decodificada para el painter
-  double _logoSize = 65.0;    // tamaño en px dentro del canvas de 270
-  double _auraSize = 3.0;     // margen en módulos QR
+  Uint8List? _logoBytes;      
+  img_lib.Image? _logoImage;  
+  List<List<bool>>? _outerMask; // NUEVO: Máscara para ignorar huecos internos
+  double _logoSize = 65.0;    
+  double _auraSize = 2.0;     // NUEVO: Comienza en 2 (Separación ya visible)
 
   final GlobalKey _qrKey = GlobalKey();
 
-  // ── Procesar logo: remover fondo blanco y extraer alpha ──────────
+  // ── Procesar logo: remover fondo blanco y generar máscara exterior ──
   Future<void> _processLogo(File file) async {
     final bytes = await file.readAsBytes();
     img_lib.Image? image = img_lib.decodeImage(bytes);
     if (image == null) return;
 
-    // Convertir siempre a RGBA para tener canal alpha
     image = image.convert(numChannels: 4);
-
     final String ext = file.path.toLowerCase();
     final bool isJpg = ext.endsWith('.jpg') || ext.endsWith('.jpeg');
 
     if (isJpg) {
-      // Remoción de fondo blanco: flood-fill desde los 4 bordes
       image = _removeWhiteBackground(image);
     }
 
-    // Generar PNG con transparencia para mostrar en UI
-    final pngBytes = Uint8List.fromList(img_lib.encodePng(image));
+    // NUEVO: Algoritmo Inverso para detectar contorno exterior sólido (ignora huecos)
+    final int w = image.width;
+    final int h = image.height;
+    List<List<bool>> solidMask = List.generate(h, (_) => List.filled(w, true));
+    final visited = List.generate(h, (_) => List.filled(w, false));
+    final queue = <List<int>>[];
 
-    // Extraer paleta del logo
-    final palette = await PaletteGenerator.fromImageProvider(
-        MemoryImage(pngBytes));
+    void enqueueOutside(int x, int y) {
+      if (x < 0 || x >= w || y < 0 || y >= h) return;
+      if (visited[y][x]) return;
+      if (image!.getPixel(x, y).a <= 30) {
+        visited[y][x] = true;
+        solidMask[y][x] = false; // Es transparente Y está afuera -> permitido para QR
+        queue.add([x, y]);
+      }
+    }
+
+    // Iniciar inundación desde los 4 bordes
+    for (int x = 0; x < w; x++) { enqueueOutside(x, 0); enqueueOutside(x, h - 1); }
+    for (int y = 0; y < h; y++) { enqueueOutside(0, y); enqueueOutside(w - 1, y); }
+
+    while (queue.isNotEmpty) {
+      final pos = queue.removeLast();
+      final int x = pos[0]; final int y = pos[1];
+      enqueueOutside(x + 1, y); enqueueOutside(x - 1, y);
+      enqueueOutside(x, y + 1); enqueueOutside(x, y - 1);
+    }
+
+    final pngBytes = Uint8List.fromList(img_lib.encodePng(image));
+    final palette = await PaletteGenerator.fromImageProvider(MemoryImage(pngBytes));
 
     setState(() {
       _logoBytes = pngBytes;
       _logoImage = image;
+      _outerMask = solidMask; // Guardamos la silueta sólida
       if (_qrColorMode == "Automático (Logo)") {
-        _qrC1 = palette.vibrantColor?.color ??
-            palette.darkVibrantColor?.color ??
-            palette.dominantColor?.color ??
-            Colors.black;
-        _qrC2 = palette.darkMutedColor?.color ??
-            palette.lightVibrantColor?.color ??
-            _qrC1.withOpacity(0.7);
+        _qrC1 = palette.vibrantColor?.color ?? palette.darkVibrantColor?.color ?? palette.dominantColor?.color ?? Colors.black;
+        _qrC2 = palette.darkMutedColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1.withOpacity(0.7);
       }
     });
   }
 
-  // ── Flood-fill BFS desde los 4 bordes para remover fondo blanco ──
+  // ── Flood-fill BFS original ──
   img_lib.Image _removeWhiteBackground(img_lib.Image src) {
     final int w = src.width;
     final int h = src.height;
-    const int thresh = 230; // R,G,B > 230 = blanco/casi blanco
+    const int thresh = 230; 
 
     final visited = List.generate(h, (_) => List.filled(w, false));
     final queue = <List<int>>[];
@@ -136,28 +153,16 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Semillas: todos los píxeles del borde
-    for (int x = 0; x < w; x++) {
-      enqueue(x, 0);
-      enqueue(x, h - 1);
-    }
-    for (int y = 0; y < h; y++) {
-      enqueue(0, y);
-      enqueue(w - 1, y);
-    }
+    for (int x = 0; x < w; x++) { enqueue(x, 0); enqueue(x, h - 1); }
+    for (int y = 0; y < h; y++) { enqueue(0, y); enqueue(w - 1, y); }
 
-    // BFS 4-conexo
     while (queue.isNotEmpty) {
       final pos = queue.removeLast();
-      final int x = pos[0];
-      final int y = pos[1];
-      enqueue(x + 1, y);
-      enqueue(x - 1, y);
-      enqueue(x, y + 1);
-      enqueue(x, y - 1);
+      final int x = pos[0]; final int y = pos[1];
+      enqueue(x + 1, y); enqueue(x - 1, y);
+      enqueue(x, y + 1); enqueue(x, y - 1);
     }
 
-    // Construir imagen resultado: fondo → transparente, resto → opaco
     final result = img_lib.Image(width: w, height: h, numChannels: 4);
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
@@ -165,8 +170,7 @@ class _MainScreenState extends State<MainScreen> {
         if (visited[y][x]) {
           result.setPixelRgba(x, y, 0, 0, 0, 0);
         } else {
-          result.setPixelRgba(
-              x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), 255);
+          result.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), 255);
         }
       }
     }
@@ -354,12 +358,12 @@ class _MainScreenState extends State<MainScreen> {
               "5. Ajuste de Aura (Separación QR ↔ Logo)",
               Column(children: [
                 Text(
-                    "Margen: ${_auraSize.toInt()} módulo${_auraSize == 1 ? '' : 's'}"),
+                    "Margen: ${_auraSize.toInt()} nivel"),
                 Slider(
                     value: _auraSize,
-                    min: 0,
-                    max: 8,
-                    divisions: 8,
+                    min: 1, // NUEVO: Mínimo 1 para que sea visible siempre
+                    max: 5, // NUEVO: Máximo 5 para legibilidad
+                    divisions: 4,
                     activeColor: Colors.black,
                     onChanged: (v) => setState(() => _auraSize = v)),
               ])),
@@ -395,6 +399,7 @@ class _MainScreenState extends State<MainScreen> {
                               data: finalData,
                               estilo: _estilo,
                               logoImage: _logoImage,
+                              outerMask: _outerMask, // NUEVO: Pasamos la máscara
                               logoSize: _logoSize,
                               auraSize: _auraSize,
                               qrC1: _qrC1,
@@ -635,13 +640,14 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// QrMasterPainter — Exclusión pixel-perfect basada en alpha real
+// QrMasterPainter — Exclusión pixel-perfect basada en máscara sólida
 // ═══════════════════════════════════════════════════════════════════
 class QrMasterPainter extends CustomPainter {
   final String data, estilo, qrMode, qrDir;
-  final img_lib.Image? logoImage; // imagen con alpha real
-  final double logoSize;          // tamaño en px en el canvas de 270
-  final double auraSize;          // margen adicional en módulos QR
+  final img_lib.Image? logoImage; 
+  final List<List<bool>>? outerMask; // NUEVO: Máscara sólida exterior
+  final double logoSize;         
+  final double auraSize;         
   final bool customEyes;
   final Color qrC1, qrC2, eyeExt, eyeInt;
 
@@ -649,6 +655,7 @@ class QrMasterPainter extends CustomPainter {
     required this.data,
     required this.estilo,
     required this.logoImage,
+    required this.outerMask,
     required this.logoSize,
     required this.auraSize,
     required this.qrC1,
@@ -666,52 +673,41 @@ class QrMasterPainter extends CustomPainter {
         (r >= modules - 7 && c < 7);
   }
 
-  // ── Núcleo: ¿este módulo debe suprimirse por el logo + aura? ────
   bool _hitsLogo(int r, int c, int modules) {
-    if (logoImage == null) return false;
+    if (logoImage == null || outerMask == null) return false;
 
     final double canvasSize = 270.0;
     final double logoFrac = logoSize / canvasSize;
     final double logoStart = (1.0 - logoFrac) / 2.0;
     final double logoEnd = logoStart + logoFrac;
 
-    // Centro del módulo normalizado [0..1]
     final double nx = (c + 0.5) / modules;
     final double ny = (r + 0.5) / modules;
 
-    // Margen de aura en espacio normalizado
-    // auraSize está en módulos → convertir a fracción del canvas
-    final double auraNorm = (auraSize / modules);
+    final double auraNorm = (auraSize * 1.5 / modules); // NUEVO: Factor 1.5 para garantizar separación visible
 
-    // Rechazo rápido: fuera del bounding box logo+aura
     if (nx < logoStart - auraNorm || nx > logoEnd + auraNorm) return false;
     if (ny < logoStart - auraNorm || ny > logoEnd + auraNorm) return false;
 
-    // Coordenadas relativas dentro del área del logo [0..1]
-    // (pueden ser negativas o >1 si estamos en la zona de aura fuera del logo)
     final double relX = (nx - logoStart) / logoFrac;
     final double relY = (ny - logoStart) / logoFrac;
 
     final int imgW = logoImage!.width;
     final int imgH = logoImage!.height;
 
-    // Convertir aura de módulos a píxeles de la imagen
-    // 1 módulo = (1/modules) del canvas = (1/modules * logoSize) px del logo
-    // en imagen: * (imgW / logoSize)
     final double moduleInImgPx = imgW / (modules * logoFrac);
-    final int auraInt = (auraSize * moduleInImgPx).ceil().clamp(1, 40);
+    final int auraInt = (auraSize * 1.5 * moduleInImgPx).ceil().clamp(1, 40); // NUEVO: Buffer garantizado
 
-    // Píxel central del módulo en la imagen
     final int baseImgX = (relX * imgW).round();
     final int baseImgY = (relY * imgH).round();
 
-    // Buscar en vecindad si hay algún píxel opaco del logo
     for (int dy = -auraInt; dy <= auraInt; dy++) {
       for (int dx = -auraInt; dx <= auraInt; dx++) {
         final int ix = (baseImgX + dx).clamp(0, imgW - 1);
         final int iy = (baseImgY + dy).clamp(0, imgH - 1);
-        final pixel = logoImage!.getPixel(ix, iy);
-        if (pixel.a > 30) return true; // píxel visible → suprimir módulo
+        // NUEVO: Consultamos la máscara sólida, NO el pixel transparente.
+        // Si es true, significa que es masa del logo o hueco interno.
+        if (outerMask![iy][ix]) return true; 
       }
     }
     return false;
@@ -799,13 +795,14 @@ class QrMasterPainter extends CustomPainter {
         ),
         paint,
       );
-      if (c + 1 < modules && qrImage.isDark(r, c + 1)) {
+      // NUEVO: El puente solo se dibuja si el módulo vecino TAMPOCO choca con el logo
+      if (c + 1 < modules && qrImage.isDark(r, c + 1) && !_hitsLogo(r, c + 1, modules)) {
         canvas.drawRect(
             Rect.fromLTWH(
                 x + tileSize / 2, y + 0.5, tileSize, tileSize - 0.5),
             paint);
       }
-      if (r + 1 < modules && qrImage.isDark(r + 1, c)) {
+      if (r + 1 < modules && qrImage.isDark(r + 1, c) && !_hitsLogo(r + 1, c, modules)) {
         canvas.drawRect(
             Rect.fromLTWH(
                 x + 0.5, y + tileSize / 2, tileSize - 0.5, tileSize),
@@ -820,7 +817,8 @@ class QrMasterPainter extends CustomPainter {
         ),
         paint,
       );
-      if (r + 1 < modules && qrImage.isDark(r + 1, c)) {
+      // NUEVO: Igual para barras, puente hacia abajo solo si el vecino es seguro
+      if (r + 1 < modules && qrImage.isDark(r + 1, c) && !_hitsLogo(r + 1, c, modules)) {
         canvas.drawRect(
             Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2,
                 tileSize * 0.8, tileSize),
