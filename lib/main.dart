@@ -13,7 +13,6 @@ import 'package:flutter/rendering.dart';
 void main() => runApp(const MaterialApp(
     home: SplashScreen(), debugShowCheckedModeBanner: false));
 
-// ── Splash ────────────────────────────────────────────────────────
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
   @override
@@ -42,7 +41,6 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
-// ── Main Screen ───────────────────────────────────────────────────
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
   @override
@@ -72,9 +70,9 @@ class _MainScreenState extends State<MainScreen> {
 
   Uint8List? _logoBytes;
   img_lib.Image? _logoImage;
-  List<List<bool>>? _outerMask; 
+  List<List<bool>>? _outerMask;
   double _logoSize = 65.0;
-  double _auraSize = 1.0; 
+  double _auraSize = 1.0;
 
   final GlobalKey _qrKey = GlobalKey();
 
@@ -119,7 +117,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       if (firstY != -1) {
         for (int y = firstY; y <= lastY; y++) {
-          if (rowBound[y][x]) finalMask[y][x] = true; 
+          if (rowBound[y][x]) finalMask[y][x] = true;
         }
       }
     }
@@ -259,14 +257,12 @@ class _MainScreenState extends State<MainScreen> {
             if (_logoBytes != null) ...[
               const SizedBox(height: 12),
               Text("Tamaño del logo: ${_logoSize.toInt()}px (Tope Seguro)"),
-              // Freno de Seguridad para tamaño de logo
               Slider(value: _logoSize, min: 30, max: 85, divisions: 11, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v)),
             ],
           ])),
 
           _buildCard("5. Ajuste de Aura (Separación QR ↔ Logo)", Column(children: [
             Text("Margen: ${_auraSize.toInt()} Nivel(es)"),
-            // Freno de Seguridad para Aura
             Slider(value: _auraSize, min: 1, max: 3, divisions: 2, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v)),
           ])),
 
@@ -373,6 +369,7 @@ class QrMasterPainter extends CustomPainter {
       paint.color = qrC1;
     }
 
+    // ── Exclusion mask — INTACTO ─────────────────────────────────
     List<List<bool>> exclusionMask = List.generate(modules, (_) => List.filled(modules, false));
     if (logoImage != null && outerMask != null) {
       final double canvasSize = 270.0;
@@ -418,11 +415,11 @@ class QrMasterPainter extends CustomPainter {
       }
     }
 
-    // ARREGLO DE GLITCH EN OJOS: Evita que se dibujen bloques por debajo de los ojos.
+    // ── isSafeDark — INTACTO ─────────────────────────────────────
     bool isSafeDark(int r, int c) {
       if (r < 0 || r >= modules || c < 0 || c >= modules) return false;
       if (!qrImage.isDark(r, c)) return false;
-      if (_isEyeModule(r, c, modules)) return false; // El área del ojo queda 100% libre para _drawEye
+      if (_isEyeModule(r, c, modules)) return false;
       if (exclusionMask[r][c]) return false;
       return true;
     }
@@ -436,27 +433,91 @@ class QrMasterPainter extends CustomPainter {
         final double y = r * tileSize;
 
         if (estilo.contains("Gusano")) {
-          bool right = isSafeDark(r, c + 1);
-          bool bottom = isSafeDark(r + 1, c);
+          // ── LIQUID PRO: Path único con esquinas adaptativas ──
+          // Cada esquina se redondea SOLO si NO hay vecino en esa dirección.
+          // Si hay vecino → esquina plana (radio ~0) para fusión perfecta.
+          // El resultado: los módulos conectados fluyen como un gusano continuo.
+          final bool up    = isSafeDark(r - 1, c);
+          final bool right = isSafeDark(r, c + 1);
+          final bool down  = isSafeDark(r + 1, c);
+          final bool left  = isSafeDark(r, c - 1);
 
-          // RESTAURADO EXACTO: El pegamento visual de +0.5 y -0.5 píxeles que da el efecto líquido.
-          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + 0.5, y + 0.5, tileSize - 0.5, tileSize - 0.5), Radius.circular(tileSize * 0.35)), paint);
-          if (right) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + 0.5, tileSize, tileSize - 0.5), paint);
-          if (bottom) canvas.drawRect(Rect.fromLTWH(x + 0.5, y + tileSize / 2, tileSize - 0.5, tileSize), paint);
+          final double rad = tileSize * 0.38; // radio máximo de esquina
+          // Radio de cada esquina: grande si libre, mínimo si conectado
+          final double rTL = (up   || left)  ? tileSize * 0.04 : rad;
+          final double rTR = (up   || right) ? tileSize * 0.04 : rad;
+          final double rBR = (down || right) ? tileSize * 0.04 : rad;
+          final double rBL = (down || left)  ? tileSize * 0.04 : rad;
+
+          // Path único que describe el módulo completo con las 4 esquinas
+          final path = Path();
+          // Top edge: left→right
+          path.moveTo(x + rTL, y);
+          path.lineTo(x + tileSize - rTR, y);
+          path.quadraticBezierTo(x + tileSize, y, x + tileSize, y + rTR);
+          // Right edge: top→bottom
+          path.lineTo(x + tileSize, y + tileSize - rBR);
+          path.quadraticBezierTo(x + tileSize, y + tileSize, x + tileSize - rBR, y + tileSize);
+          // Bottom edge: right→left
+          path.lineTo(x + rBL, y + tileSize);
+          path.quadraticBezierTo(x, y + tileSize, x, y + tileSize - rBL);
+          // Left edge: bottom→top
+          path.lineTo(x, y + rTL);
+          path.quadraticBezierTo(x, y, x + rTL, y);
+          path.close();
+          canvas.drawPath(path, paint);
 
         } else if (estilo.contains("Barras")) {
-          bool bottom = isSafeDark(r + 1, c);
-          
-          // RESTAURADO EXACTO: Efecto barra suave.
-          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, tileSize + 0.5), Radius.circular(tileSize * 0.3)), paint);
-          if (bottom) canvas.drawRect(Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2, tileSize * 0.8, tileSize), paint);
+          // ── BARRAS: Path único vertical con caps solo en extremos libres ──
+          // Si hay vecino arriba → cap superior plano (se fusiona con la barra de arriba).
+          // Si hay vecino abajo → cap inferior plano (se fusiona con la barra de abajo).
+          // Solo los extremos sin vecino reciben el cap redondeado.
+          // El resultado: columnas continuas con remates redondeados solo al inicio/fin.
+          final bool up   = isSafeDark(r - 1, c);
+          final bool down = isSafeDark(r + 1, c);
+
+          final double bx     = x + tileSize * 0.12; // margen horizontal de la barra
+          final double bw     = tileSize * 0.76;      // ancho de la barra
+          final double capRad = bw / 2;               // radio del cap = semicírculo
+
+          // Extensión para solapar con el módulo vecino y eliminar la junta
+          final double overlap = up   ? tileSize * 0.5 : 0.0;
+          final double overlapB = down ? tileSize * 0.5 : 0.0;
+
+          final double top    = y - overlap;
+          final double bottom = y + tileSize + overlapB;
+
+          final path = Path();
+          if (!up) {
+            // Cap superior redondeado (semicírculo)
+            path.addArc(Rect.fromLTWH(bx, top, bw, bw), 3.14159, 3.14159);
+            path.lineTo(bx + bw, top + bw / 2);
+          } else {
+            // Cap superior plano (fusión con barra de arriba)
+            path.moveTo(bx, top);
+            path.lineTo(bx + bw, top);
+          }
+
+          if (!down) {
+            // Cap inferior redondeado (semicírculo)
+            path.lineTo(bx + bw, bottom - bw / 2);
+            path.addArc(Rect.fromLTWH(bx, bottom - bw, bw, bw), 0, 3.14159);
+          } else {
+            // Cap inferior plano (fusión con barra de abajo)
+            path.lineTo(bx + bw, bottom);
+            path.lineTo(bx, bottom);
+          }
+          path.close();
+          canvas.drawPath(path, paint);
 
         } else if (estilo.contains("Puntos")) {
+          // INTACTO
           double hash = ((r * 13 + c * 29) % 100) / 100.0;
           double radius = tileSize * 0.35 + (tileSize * 0.15 * hash);
           canvas.drawCircle(Offset(x + tileSize / 2, y + tileSize / 2), radius, paint);
 
         } else if (estilo.contains("Diamantes")) {
+          // INTACTO
           double hash = ((r * 17 + c * 31) % 100) / 100.0;
           double scale = 0.65 + (0.5 * hash);
           double offset = tileSize * (1.0 - scale) / 2;
@@ -469,12 +530,13 @@ class QrMasterPainter extends CustomPainter {
           canvas.drawPath(path, paint);
 
         } else {
+          // INTACTO — Normal cuadrado
           canvas.drawRect(Rect.fromLTWH(x, y, tileSize + 0.3, tileSize + 0.3), paint);
         }
       }
     }
 
-    // ── Ojos ─────────────────────────────────────────────────────
+    // ── Ojos — INTACTOS ──────────────────────────────────────────
     final pE = Paint()..isAntiAlias = true;
     final pI = Paint()..isAntiAlias = true;
     if (customEyes) { pE.color = eyeExt; pI.color = eyeInt; } else if (gradShader != null) { pE.shader = gradShader; pI.shader = gradShader; } else { pE.color = qrC1; pI.color = qrC1; }
@@ -488,6 +550,7 @@ class QrMasterPainter extends CustomPainter {
     _drawEye(canvas, 0, (modules - 7) * tileSize, tileSize, pE, pI, eStyle);
   }
 
+  // ── _drawEye — INTACTO ────────────────────────────────────────
   void _drawEye(Canvas canvas, double x, double y, double t, Paint pE, Paint pI, EyeStyle eStyle) {
     final double s = 7 * t;
     if (eStyle == EyeStyle.circ) {
@@ -504,5 +567,6 @@ class QrMasterPainter extends CustomPainter {
       canvas.drawRect(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.4 * t), pI);
     }
   }
+
   @override bool shouldRepaint(CustomPainter old) => true;
 }
