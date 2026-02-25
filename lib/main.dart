@@ -81,8 +81,8 @@ class _MainScreenState extends State<MainScreen> {
   Uint8List? _logoBytes;
   img_lib.Image? _logoImage;
   List<List<bool>>? _outerMask; 
-  double _logoSize = 65.0; // Tope 75 en básico
-  double _logoSizeAvanzado = 200.0; // En avanzado el logo puede ser enorme
+  double _logoSize = 65.0; // Tope 75 en básico y overlay avanzado
+  double _logoSizeAvanzado = 200.0; // En avanzado (Mapa/Fusión) el logo puede ser enorme
   double _auraSize = 1.0; 
 
   final GlobalKey _qrKey = GlobalKey();
@@ -231,6 +231,17 @@ class _MainScreenState extends State<MainScreen> {
     final String finalData = _getFinalData();
     final bool isEmpty = finalData.isEmpty;
 
+    // Lógica inteligente para saber cuándo mostrar la imagen del logo encima
+    bool showLogoOverlay = true;
+    bool showAuraSlider = true;
+    
+    if (isAdvanced) {
+      if (_estiloAvanzado == "Forma de Mapa (Máscara)" || _estiloAvanzado == "Logo Fusión (Camuflaje)") {
+        showLogoOverlay = false; // El logo desaparece y se vuelve QR
+        showAuraSlider = false;  // No necesita aura si no hay imagen encima
+      }
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(15),
       child: Column(children: [
@@ -266,7 +277,7 @@ class _MainScreenState extends State<MainScreen> {
              _buildColorPicker("Colores Base", _qrC1, _qrC2, (c) => setState(() => _qrC1 = c), (c) => setState(() => _qrC2 = c), isGrad: true),
              const Padding(
               padding: EdgeInsets.only(top: 8.0),
-              child: Text("⚠️ Cuidado: Forma de Mapa y Fusión requieren logos muy grandes o el QR perderá lectura.", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+              child: Text("⚠️ Cuidado: Forma de Mapa y Fusión requieren que subas un logo de buena calidad para tomar su forma o color.", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
             ),
           ])),
 
@@ -294,15 +305,17 @@ class _MainScreenState extends State<MainScreen> {
           const Padding(padding: EdgeInsets.only(top: 8.0, bottom: 4.0), child: Text("💡 Nota: Si su diseño es blanco, seleccione un fondo oscuro.", style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic))),
           if (_logoBytes != null) ...[
             const SizedBox(height: 12),
-            Text("Tamaño del logo: ${isAdvanced ? _logoSizeAvanzado.toInt() : _logoSize.toInt()}px"),
-            if (!isAdvanced)
-              Slider(value: _logoSize, min: 30, max: 75, divisions: 9, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v))
-            else
+            if (showLogoOverlay) ...[
+              Text("Tamaño del logo: ${_logoSize.toInt()}px (Tope Seguro)"),
+              Slider(value: _logoSize, min: 30, max: 75, divisions: 9, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v)),
+            ] else ...[
+              Text("Tamaño del logo interno: ${_logoSizeAvanzado.toInt()}px"),
               Slider(value: _logoSizeAvanzado, min: 50, max: 270, divisions: 22, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSizeAvanzado = v)),
+            ]
           ],
         ])),
 
-        if (!isAdvanced)
+        if (showAuraSlider)
           _buildCard("5. Ajuste de Aura (Separación QR ↔ Logo)", Column(children: [
             Text("Margen: ${_auraSize.toInt()} Nivel(es)"),
             Slider(value: _auraSize, min: 0, max: 3, divisions: 3, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v)),
@@ -325,7 +338,9 @@ class _MainScreenState extends State<MainScreen> {
                           size: const Size(270, 270),
                           painter: isAdvanced 
                             ? QrAdvancedPainter(
-                                data: finalData, estiloAvanzado: _estiloAvanzado, logoImage: _logoImage, outerMask: _outerMask, logoSize: _logoSizeAvanzado,
+                                data: finalData, estiloAvanzado: _estiloAvanzado, logoImage: _logoImage, outerMask: _outerMask, 
+                                logoSize: showLogoOverlay ? _logoSize : _logoSizeAvanzado, 
+                                auraSize: _auraSize, // Freno de seguridad heredado
                                 qrC1: _qrC1, qrC2: _qrC2, customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
                               )
                             : QrMasterPainter( // EL CÓDIGO PRO INTACTO
@@ -333,13 +348,9 @@ class _MainScreenState extends State<MainScreen> {
                                 qrC1: _qrC1, qrC2: _qrC2, qrMode: _qrColorMode, qrDir: _qrGradDir, customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
                               ),
                         ),
-                        // En "Forma de Mapa", ocultamos el logo visual normal para que solo se vea el QR
-                        if (_logoBytes != null && (!isAdvanced || _estiloAvanzado != "Forma de Mapa (Máscara)")) 
-                          SizedBox(
-                            width: isAdvanced ? _logoSizeAvanzado : _logoSize, 
-                            height: isAdvanced ? _logoSizeAvanzado : _logoSize, 
-                            child: Image.memory(_logoBytes!, fit: BoxFit.contain, color: isAdvanced && _estiloAvanzado == "Logo Fusión (Camuflaje)" ? Colors.white.withOpacity(0.5) : null, colorBlendMode: BlendMode.lighten)
-                          ),
+                        // Solo dibuja la imagen si las lógicas lo permiten
+                        if (_logoBytes != null && showLogoOverlay) 
+                          SizedBox(width: _logoSize, height: _logoSize, child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
                       ],
                     ),
             ),
@@ -507,10 +518,10 @@ class QrMasterPainter extends CustomPainter {
 class QrAdvancedPainter extends CustomPainter {
   final String data, estiloAvanzado;
   final img_lib.Image? logoImage; final List<List<bool>>? outerMask;
-  final double logoSize;
+  final double logoSize, auraSize;
   final bool customEyes; final Color qrC1, qrC2, eyeExt, eyeInt;
 
-  QrAdvancedPainter({required this.data, required this.estiloAvanzado, required this.logoImage, required this.outerMask, required this.logoSize, required this.qrC1, required this.qrC2, required this.customEyes, required this.eyeExt, required this.eyeInt});
+  QrAdvancedPainter({required this.data, required this.estiloAvanzado, required this.logoImage, required this.outerMask, required this.logoSize, required this.auraSize, required this.qrC1, required this.qrC2, required this.customEyes, required this.eyeExt, required this.eyeInt});
 
   bool _isEyeModule(int r, int c, int modules) => (r < 7 && c < 7) || (r < 7 && c >= modules - 7) || (r >= modules - 7 && c < 7);
 
@@ -524,14 +535,19 @@ class QrAdvancedPainter extends CustomPainter {
     final Paint basePaint = Paint()..isAntiAlias = true..color = qrC1;
     final Path liquidPathC1 = Path(); final Path liquidPathC2 = Path();
     
-    // Máscara del logo para los estilos de Forma de Mapa y Fusión
+    // Mapas para Forma de Mapa y Fusión
     List<List<bool>> logoMaskMap = List.generate(modules, (_) => List.filled(modules, false));
     List<List<Color?>> logoColorMap = List.generate(modules, (_) => List.filled(modules, null));
+    List<List<bool>> exclusionMask = List.generate(modules, (_) => List.filled(modules, false));
     
+    bool isFusionOrMap = estiloAvanzado == "Forma de Mapa (Máscara)" || estiloAvanzado == "Logo Fusión (Camuflaje)";
+
     if (logoImage != null && outerMask != null) {
       final double logoFrac = logoSize / 270.0;
       final double logoStart = (1.0 - logoFrac) / 2.0;
       final double logoEnd = logoStart + logoFrac;
+      
+      // Mapear color y forma (Para Mapa y Fusión)
       for (int r = 0; r < modules; r++) {
         for (int c = 0; c < modules; c++) {
           double nx = (c + 0.5) / modules; double ny = (r + 0.5) / modules;
@@ -542,7 +558,42 @@ class QrAdvancedPainter extends CustomPainter {
             if (outerMask![py][px]) {
               logoMaskMap[r][c] = true;
               final pixel = logoImage!.getPixel(px, py);
-              logoColorMap[r][c] = Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt());
+              if (pixel.a > 30) {
+                logoColorMap[r][c] = Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt());
+              }
+            }
+          }
+        }
+      }
+
+      // Freno de Seguridad y Aura (SOLO para Circular y Split Liquid)
+      if (!isFusionOrMap) {
+        List<List<bool>> baseLogoModules = List.generate(modules, (_) => List.filled(modules, false));
+        for (int r = 0; r < modules; r++) {
+          for (int c = 0; c < modules; c++) {
+            bool hit = false;
+            for (double dy = 0.2; dy <= 0.8; dy += 0.3) {
+              for (double dx = 0.2; dx <= 0.8; dx += 0.3) {
+                double nx = (c + dx) / modules; double ny = (r + dy) / modules;
+                if (nx >= logoStart && nx <= logoEnd && ny >= logoStart && ny <= logoEnd) {
+                  double relX = (nx - logoStart) / logoFrac; double relY = (ny - logoStart) / logoFrac;
+                  int px = (relX * logoImage!.width).clamp(0, logoImage!.width - 1).toInt(); int py = (relY * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
+                  if (outerMask![py][px]) { hit = true; break; }
+                }
+              } if (hit) break;
+            } if (hit) baseLogoModules[r][c] = true;
+          }
+        }
+        int auraRadius = auraSize.toInt();
+        for (int r = 0; r < modules; r++) {
+          for (int c = 0; c < modules; c++) {
+            if (baseLogoModules[r][c]) {
+              for (int dr = -auraRadius; dr <= auraRadius; dr++) {
+                for (int dc = -auraRadius; dc <= auraRadius; dc++) {
+                  int nr = r + dr; int nc = c + dc;
+                  if (nr >= 0 && nr < modules && nc >= 0 && nc < modules) exclusionMask[nr][nc] = true;
+                }
+              }
             }
           }
         }
@@ -554,14 +605,17 @@ class QrAdvancedPainter extends CustomPainter {
       if (!qrImage.isDark(r, c)) return false;
       if (_isEyeModule(r, c, modules)) return false; 
       
+      // Aplicar exclusión SOLO a Circular y Split (Los que tienen imagen encima)
+      if (!isFusionOrMap && exclusionMask[r][c]) return false;
+
       // Filtro QR Circular
       if (estiloAvanzado == "QR Circular") {
         double dist = math.sqrt(math.pow(c - modules/2, 2) + math.pow(r - modules/2, 2));
-        if (dist > (modules / 2.1)) return false; // Dibuja solo dentro del círculo
+        if (dist > (modules / 2.1)) return false; 
       }
       // Filtro Forma de Mapa
       if (estiloAvanzado == "Forma de Mapa (Máscara)" && logoImage != null) {
-        if (!logoMaskMap[r][c]) return false; // Dibuja solo donde está el logo
+        if (!logoMaskMap[r][c]) return false; 
       }
       return true;
     }
@@ -583,6 +637,7 @@ class QrAdvancedPainter extends CustomPainter {
             activePath.moveTo(cx, cy); activePath.lineTo(cx, cy + tileSize);
           }
         } else if (estiloAvanzado == "Logo Fusión (Camuflaje)") {
+          // El color lo toma del logo. Si es transparente o está fuera, usa el color base.
           Color dotColor = logoColorMap[r][c] ?? qrC1;
           Paint fusionPaint = Paint()..color = dotColor..strokeWidth = tileSize..strokeCap = StrokeCap.round..style = PaintingStyle.stroke;
           Path p = Path()..moveTo(cx, cy)..lineTo(cx, cy);
