@@ -72,9 +72,9 @@ class _MainScreenState extends State<MainScreen> {
 
   Uint8List? _logoBytes;
   img_lib.Image? _logoImage;
-  List<List<bool>>? _outerMask; // Máscara de silueta sólida sin huecos
+  List<List<bool>>? _outerMask; 
   double _logoSize = 65.0;
-  double _auraSize = 1.0; // Comienza en 1 Módulo de separación
+  double _auraSize = 1.0; 
 
   final GlobalKey _qrKey = GlobalKey();
 
@@ -95,7 +95,6 @@ class _MainScreenState extends State<MainScreen> {
     final int w = image.width;
     final int h = image.height;
 
-    // MEJORA: Algoritmo de Bounding Interseccional (Cierra huecos como la "O")
     List<List<bool>> rowBound = List.generate(h, (_) => List.filled(w, false));
     for (int y = 0; y < h; y++) {
       int firstX = -1, lastX = -1;
@@ -121,7 +120,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       if (firstY != -1) {
         for (int y = firstY; y <= lastY; y++) {
-          if (rowBound[y][x]) finalMask[y][x] = true; // Solo si está dentro de X e Y
+          if (rowBound[y][x]) finalMask[y][x] = true; 
         }
       }
     }
@@ -243,7 +242,7 @@ class _MainScreenState extends State<MainScreen> {
                     value: _estilo,
                     items: [
                       "Liquid Pro (Gusano)", "Normal (Cuadrado)",
-                      "Barras (Vertical)", "Circular (Puntos)", "Diamantes (Rombos)" // NUEVO ESTILO
+                      "Barras (Vertical)", "Circular (Puntos)", "Diamantes (Rombos)"
                     ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                     onChanged: (v) => setState(() => _estilo = v!)),
                 DropdownButtonFormField<String>(
@@ -313,8 +312,8 @@ class _MainScreenState extends State<MainScreen> {
                 Text("Margen: ${_auraSize.toInt()} Módulo(s)"),
                 Slider(
                     value: _auraSize,
-                    min: 0,
-                    max: 4, // Límite seguro
+                    min: 1,
+                    max: 5, 
                     divisions: 4,
                     activeColor: Colors.black,
                     onChanged: (v) => setState(() => _auraSize = v)),
@@ -423,6 +422,9 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _exportar() async { final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary; final ui.Image image = await boundary.toImage(pixelRatio: 4.0); final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png); await ImageGallerySaver.saveImage(byteData!.buffer.asUint8List()); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ QR Guardado"))); }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// QrMasterPainter — Geometría Orgánica Plena y Exclusión Inteligente
+// ═══════════════════════════════════════════════════════════════════
 class QrMasterPainter extends CustomPainter {
   final String data, estilo, qrMode, qrDir;
   final img_lib.Image? logoImage;
@@ -459,7 +461,7 @@ class QrMasterPainter extends CustomPainter {
       paint.color = qrC1;
     }
 
-    // MEJORA: Construir Matriz de Exclusión basada en Módulos Reales del QR
+    // Matriz de exclusión
     List<List<bool>> exclusionMask = List.generate(modules, (_) => List.filled(modules, false));
     if (logoImage != null && outerMask != null) {
       final double canvasSize = 270.0;
@@ -498,7 +500,6 @@ class QrMasterPainter extends CustomPainter {
       }
     }
 
-    // Función auxiliar de Módulo Seguro para no dibujar puentes al vacío
     bool isSafeDark(int r, int c) {
       if (r < 0 || r >= modules || c < 0 || c >= modules) return false;
       if (!qrImage.isDark(r, c)) return false;
@@ -507,7 +508,7 @@ class QrMasterPainter extends CustomPainter {
       return true;
     }
 
-    // ── Módulos de datos ─────────────────────────────────────────
+    // Dibujo de módulos
     for (int r = 0; r < modules; r++) {
       for (int c = 0; c < modules; c++) {
         if (!isSafeDark(r, c)) continue;
@@ -516,34 +517,59 @@ class QrMasterPainter extends CustomPainter {
         final double y = r * tileSize;
 
         if (estilo.contains("Gusano")) {
-          bool right = isSafeDark(r, c + 1);
+          bool top = isSafeDark(r - 1, c);
           bool bottom = isSafeDark(r + 1, c);
+          bool left = isSafeDark(r, c - 1);
+          bool right = isSafeDark(r, c + 1);
+          
+          bool topLeft = isSafeDark(r - 1, c - 1);
+          bool topRight = isSafeDark(r - 1, c + 1);
+          bool bottomLeft = isSafeDark(r + 1, c - 1);
           bool bottomRight = isSafeDark(r + 1, c + 1);
 
-          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, tileSize, tileSize), Radius.circular(tileSize * 0.4)), paint);
-          if (right) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y, tileSize / 2 + 0.5, tileSize), paint);
-          if (bottom) canvas.drawRect(Rect.fromLTWH(x, y + tileSize / 2, tileSize, tileSize / 2 + 0.5), paint);
-          // MEJORA: Unión de esquina para evitar el micro-agujero entre 4 cuadros unidos
-          if (right && bottom && bottomRight) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + tileSize / 2, tileSize / 2 + 0.5, tileSize / 2 + 0.5), paint);
+          double ext = 0.8; 
+
+          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, tileSize, tileSize), Radius.circular(tileSize * 0.45)), paint);
+          
+          if (right) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y, tileSize / 2 + ext, tileSize), paint);
+          if (left) canvas.drawRect(Rect.fromLTWH(x - ext, y, tileSize / 2 + ext, tileSize), paint);
+          if (bottom) canvas.drawRect(Rect.fromLTWH(x, y + tileSize / 2, tileSize, tileSize / 2 + ext), paint);
+          if (top) canvas.drawRect(Rect.fromLTWH(x, y - ext, tileSize, tileSize / 2 + ext), paint);
+
+          if (right && bottom && bottomRight) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y + tileSize / 2, tileSize / 2 + ext, tileSize / 2 + ext), paint);
+          if (left && bottom && bottomLeft) canvas.drawRect(Rect.fromLTWH(x - ext, y + tileSize / 2, tileSize / 2 + ext, tileSize / 2 + ext), paint);
+          if (left && top && topLeft) canvas.drawRect(Rect.fromLTWH(x - ext, y - ext, tileSize / 2 + ext, tileSize / 2 + ext), paint);
+          if (right && top && topRight) canvas.drawRect(Rect.fromLTWH(x + tileSize / 2, y - ext, tileSize / 2 + ext, tileSize / 2 + ext), paint);
 
         } else if (estilo.contains("Barras")) {
+          bool top = isSafeDark(r - 1, c);
           bool bottom = isSafeDark(r + 1, c);
-          canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, tileSize), Radius.circular(tileSize * 0.3)), paint);
-          if (bottom) canvas.drawRect(Rect.fromLTWH(x + tileSize * 0.1, y + tileSize / 2, tileSize * 0.8, tileSize / 2 + 0.5), paint);
+          
+          double bw = tileSize * 0.7; 
+          double offset = x + (tileSize - bw) / 2;
+
+          canvas.drawRRect(
+            RRect.fromRectAndCorners(
+              Rect.fromLTWH(offset, y - (top ? 0.5 : 0), bw, tileSize + (bottom ? 0.5 : 0)),
+              topLeft: top ? Radius.zero : Radius.circular(bw / 2),
+              topRight: top ? Radius.zero : Radius.circular(bw / 2),
+              bottomLeft: bottom ? Radius.zero : Radius.circular(bw / 2),
+              bottomRight: bottom ? Radius.zero : Radius.circular(bw / 2),
+            ),
+            paint
+          );
 
         } else if (estilo.contains("Puntos")) {
-          // MEJORA: Círculos orgánicos variados matemáticamente
           double hash = ((r * 13 + c * 29) % 100) / 100.0;
           double radius = tileSize * 0.35 + (tileSize * 0.15 * hash);
           canvas.drawCircle(Offset(x + tileSize / 2, y + tileSize / 2), radius, paint);
 
         } else if (estilo.contains("Diamantes")) {
-          // NUEVO ESTILO: Diamantes (Rombos)
           Path path = Path()
             ..moveTo(x + tileSize / 2, y)
-            ..lineTo(x + tileSize, y + tileSize / 2)
-            ..lineTo(x + tileSize / 2, y + tileSize)
-            ..lineTo(x, y + tileSize / 2)
+            ..lineTo(x + tileSize + 0.5, y + tileSize / 2)
+            ..lineTo(x + tileSize / 2, y + tileSize + 0.5)
+            ..lineTo(x - 0.5, y + tileSize / 2)
             ..close();
           canvas.drawPath(path, paint);
 
@@ -558,7 +584,7 @@ class QrMasterPainter extends CustomPainter {
     final pI = Paint()..isAntiAlias = true;
     if (customEyes) { pE.color = eyeExt; pI.color = eyeInt; } else if (gradShader != null) { pE.shader = gradShader; pI.shader = gradShader; } else { pE.color = qrC1; pI.color = qrC1; }
 
-    final bool circEyes = estilo.contains("Puntos") || estilo.contains("Diamantes");
+    final bool circEyes = estilo.contains("Puntos") || estilo.contains("Diamantes") || estilo.contains("Gusano");
     _drawEye(canvas, 0, 0, tileSize, pE, pI, circEyes);
     _drawEye(canvas, (modules - 7) * tileSize, 0, tileSize, pE, pI, circEyes);
     _drawEye(canvas, 0, (modules - 7) * tileSize, tileSize, pE, pI, circEyes);
