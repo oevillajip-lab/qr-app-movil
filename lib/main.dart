@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Importante para controlar el teclado
+import 'package:flutter/services.dart';
 import 'package:qr/qr.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
@@ -113,6 +113,10 @@ class _MainScreenState extends State<MainScreen>
   Color  _bgC1        = Colors.white;
   Color  _bgC2        = const Color(0xFFF5F5F5);
 
+  // NUEVO: Variables para estilo Fusión
+  String _fusionShape = "Círculos";
+  ui.Image? _logoUiImage; 
+
   Uint8List?        _logoBytes;
   img_lib.Image?    _logoImage;
   List<List<bool>>? _outerMask;
@@ -140,6 +144,7 @@ class _MainScreenState extends State<MainScreen>
     "QR Circular (Forma)",
     "Split Liquid (Mitades)",
     "Formas (Máscara)",
+    "Fusión (Logo Fondo)", // NUEVA OPCIÓN AGREGADA
   ];
 
   @override
@@ -186,11 +191,17 @@ class _MainScreenState extends State<MainScreen>
       if (fy != -1) for (int y = fy; y <= ly; y++) if (rB[y][x]) mask[y][x] = true;
     }
     final png     = Uint8List.fromList(img_lib.encodePng(img));
+    
+    // Convertir a ui.Image para uso ultra-rápido en Fusión Painter
+    final codec = await ui.instantiateImageCodec(png);
+    final frameInfo = await codec.getNextFrame();
+
     final palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
     setState(() {
-      _logoBytes  = png;
-      _logoImage  = img;
-      _outerMask  = mask;
+      _logoBytes   = png;
+      _logoImage   = img;
+      _logoUiImage = frameInfo.image; // Guardado para Canvas
+      _outerMask   = mask;
       _qrC1 = palette.darkVibrantColor?.color ?? palette.darkMutedColor?.color ?? palette.dominantColor?.color ?? Colors.black;
       _qrC2 = palette.vibrantColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1;
       _qrColorMode = "Automático (Logo)";
@@ -303,8 +314,9 @@ class _MainScreenState extends State<MainScreen>
     final data      = _getFinalData();
     final isEmpty   = data.isEmpty;
     final isMap     = _estiloAvz == "Formas (Máscara)";
+    final isFusion  = _estiloAvz == "Fusión (Logo Fondo)";
     final effLogo   = _effectiveLogo(isMap);
-    final limited   = _logoBytes != null && !isMap && effLogo < _logoSize - 0.5;
+    final limited   = _logoBytes != null && !isMap && !isFusion && effLogo < _logoSize - 0.5;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 30),
@@ -316,25 +328,40 @@ class _MainScreenState extends State<MainScreen>
         ])),
         _card("2. Estilo del QR", _styleSelector(_advStyles, _estiloAvz,
             (s) => setState(() => _estiloAvz = s))),
-        _card("3. Color y Degradado", Column(children: [
-          DropdownButtonFormField<String>(
-              value: _qrColorMode,
-              items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"]
-                  .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-              onChanged: (v) => setState(() => _qrColorMode = v!)),
-          const SizedBox(height: 4),
-          _colorRow("Color QR",
-              _qrC1, _qrColorMode != "Sólido (Un Color)" ? _qrC2 : null,
-              (c) => setState(() => _qrC1 = c),
-              (c) => setState(() => _qrC2 = c)),
-          if (_qrColorMode == "Degradado Custom")
+        
+        // INTERFAZ INTELIGENTE: Ocultar Color si es Fusión
+        if (!isFusion)
+          _card("3. Color y Degradado", Column(children: [
             DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: "Dirección degradado"),
-                value: _qrGradDir,
-                items: ["Vertical", "Horizontal", "Diagonal"]
+                value: _qrColorMode,
+                items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"]
                     .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (v) => setState(() => _qrGradDir = v!)),
-        ])),
+                onChanged: (v) => setState(() => _qrColorMode = v!)),
+            const SizedBox(height: 4),
+            _colorRow("Color QR",
+                _qrC1, _qrColorMode != "Sólido (Un Color)" ? _qrC2 : null,
+                (c) => setState(() => _qrC1 = c),
+                (c) => setState(() => _qrC2 = c)),
+            if (_qrColorMode == "Degradado Custom")
+              DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: "Dirección degradado"),
+                  value: _qrGradDir,
+                  items: ["Vertical", "Horizontal", "Diagonal"]
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                  onChanged: (v) => setState(() => _qrGradDir = v!)),
+          ]))
+        else
+          // Reemplazo en Fusión: Selección de forma de puntos
+          _card("3. Forma de Puntos (Fusión)", DropdownButtonFormField<String>(
+              value: _fusionShape,
+              decoration: const InputDecoration(
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)))),
+              items: ["Círculos", "Cuadrados Suaves"]
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              onChanged: (v) => setState(() => _fusionShape = v!))),
+
+        // Ojos permitidos en ambos casos
         _card("4. Ojos del QR", Column(children: [
           SwitchListTile(
               title: const Text("Personalizar color de ojos"),
@@ -347,7 +374,12 @@ class _MainScreenState extends State<MainScreen>
                 (c) => setState(() => _eyeExt = c),
                 (c) => setState(() => _eyeInt = c)),
         ])),
-        _card("5. Logo", _logoSection(effLogo, limited, isMap)),
+        
+        // INTERFAZ INTELIGENTE: Modificar opciones de Logo si es Fusión
+        _card("5. Logo", isFusion 
+            ? _logoSectionFusion() 
+            : _logoSection(effLogo, limited, isMap)),
+        
         _card("6. Fondo", Column(children: [
           DropdownButtonFormField<String>(
               value: _bgMode,
@@ -417,7 +449,7 @@ class _MainScreenState extends State<MainScreen>
                               style: style, c1: _qrC1, c2: _qrC2),
                         ),
                       ),
-                      if (!style.contains("Formas"))
+                      if (!style.contains("Formas") && !style.contains("Fusión"))
                         if (_logoBytes != null)
                           SizedBox(width: 24, height: 24,
                               child: Image.memory(_logoBytes!, fit: BoxFit.contain))
@@ -470,9 +502,11 @@ class _MainScreenState extends State<MainScreen>
     if (s.contains("QR Circ"))  return "QR Circular";
     if (s.contains("Split"))    return "Split";
     if (s.contains("Formas"))   return "Formas";
+    if (s.contains("Fusión"))   return "Fusión Mapeo";
     return s;
   }
 
+  // Interfaz de Logo normal
   Widget _logoSection(double effLogo, bool limited, bool isMap) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       ElevatedButton.icon(
@@ -531,13 +565,41 @@ class _MainScreenState extends State<MainScreen>
     ]);
   }
 
+  // Interfaz de Logo especial para Fusión (Oculta los sliders)
+  Widget _logoSectionFusion() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ElevatedButton.icon(
+          onPressed: () async {
+            final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+            if (img != null) await _processLogo(File(img.path));
+          },
+          icon: const Icon(Icons.image),
+          label: Text(_logoBytes == null ? "CARGAR LOGO" : "LOGO CARGADO ✅"),
+          style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: Colors.black, foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))),
+      if (_logoBytes != null)
+        Padding(padding: const EdgeInsets.only(top: 14),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+              child: const Row(children: [
+                Icon(Icons.auto_awesome, color: Colors.blue),
+                SizedBox(width: 10),
+                Expanded(child: Text("El algoritmo adaptará automáticamente el logo a todo el tamaño del QR como lienzo.", 
+                    style: TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500)))
+              ]),
+            ))
+    ]);
+  }
+
   Widget _qrPreview(String data, bool isEmpty, String estilo, bool isAdv, double effLogo) {
     final isMap      = estilo == "Formas (Máscara)";
-    final isAdvStyle = isAdv && (estilo == "QR Circular (Forma)" ||
-        estilo == "Split Liquid (Mitades)" || isMap);
-    final bgColor = _bgMode == "Transparente"  ? Colors.transparent
-        : _bgMode == "Sólido (Color)"          ? _bgC1
-        : Colors.white;
+    final isFusion   = estilo == "Fusión (Logo Fondo)";
+    final isAdvStyle = isAdv && (estilo == "QR Circular (Forma)" || estilo == "Split Liquid (Mitades)" || isMap);
+    
+    final bgColor = _bgMode == "Transparente"  ? Colors.transparent : _bgMode == "Sólido (Color)" ? _bgC1 : Colors.white;
     final bgGrad  = _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null;
 
     return RepaintBoundary(
@@ -562,26 +624,35 @@ class _MainScreenState extends State<MainScreen>
               : Stack(alignment: Alignment.center, children: [
                   CustomPaint(
                     size: const Size(270, 270),
-                    painter: isAdvStyle
-                        ? QrAdvancedPainter(
-                            data: data, estiloAvanzado: estilo,
-                            logoImage: _logoImage, outerMask: _outerMask,
-                            logoSize: isMap ? _logoSizeMap : effLogo,
-                            auraSize: _auraSize,
-                            qrC1: _qrC1, qrC2: _qrC2,
-                            qrMode: _qrColorMode, qrDir: _qrGradDir,
+                    painter: isFusion 
+                        ? QrFusionPainter(
+                            data: data, 
+                            logoUiImage: _logoUiImage,
+                            logoImage: _logoImage,
+                            shape: _fusionShape,
+                            dominantColor: _qrC1,
                             customEyes: _customEyes,
                             eyeExt: _eyeExt, eyeInt: _eyeInt)
-                        : QrMasterPainter(
-                            data: data, estilo: estilo,
-                            logoImage: _logoImage, outerMask: _outerMask,
-                            logoSize: effLogo, auraSize: _auraSize,
-                            qrC1: _qrC1, qrC2: _qrC2,
-                            qrMode: _qrColorMode, qrDir: _qrGradDir,
-                            customEyes: _customEyes,
-                            eyeExt: _eyeExt, eyeInt: _eyeInt),
+                        : (isAdvStyle
+                          ? QrAdvancedPainter(
+                              data: data, estiloAvanzado: estilo,
+                              logoImage: _logoImage, outerMask: _outerMask,
+                              logoSize: isMap ? _logoSizeMap : effLogo,
+                              auraSize: _auraSize,
+                              qrC1: _qrC1, qrC2: _qrC2,
+                              qrMode: _qrColorMode, qrDir: _qrGradDir,
+                              customEyes: _customEyes,
+                              eyeExt: _eyeExt, eyeInt: _eyeInt)
+                          : QrMasterPainter(
+                              data: data, estilo: estilo,
+                              logoImage: _logoImage, outerMask: _outerMask,
+                              logoSize: effLogo, auraSize: _auraSize,
+                              qrC1: _qrC1, qrC2: _qrC2,
+                              qrMode: _qrColorMode, qrDir: _qrGradDir,
+                              customEyes: _customEyes,
+                              eyeExt: _eyeExt, eyeInt: _eyeInt)),
                   ),
-                  if (_logoBytes != null && !isMap)
+                  if (_logoBytes != null && !isMap && !isFusion)
                     SizedBox(width: effLogo, height: effLogo,
                         child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
                 ]),
@@ -601,7 +672,7 @@ class _MainScreenState extends State<MainScreen>
         return Column(children: [
           _field(_c1, "Número (+595981...)", 
               type: TextInputType.phone, 
-              formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+]'))]), // SOLO DIGITOS Y +
+              formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+]'))]), 
           const SizedBox(height: 10),
           _field(_c2, "Mensaje (opcional)"),
         ]);
@@ -652,14 +723,13 @@ class _MainScreenState extends State<MainScreen>
     }
   }
 
-  // Widget TextField "PRO": Fondo blanco, bordes redondeados y formatters
   Widget _field(TextEditingController c, String hint,
       {TextInputType type = TextInputType.text,
       bool obscure = false, int maxLines = 1,
       List<TextInputFormatter>? formatters}) =>
       TextField(
           controller: c,
-          inputFormatters: formatters, // AQUI SE APLICA EL FILTRO
+          inputFormatters: formatters,
           decoration: InputDecoration(
             hintText: hint,
             filled: true,
@@ -793,7 +863,7 @@ class _MainScreenState extends State<MainScreen>
 enum EyeStyle { rect, circ, diamond }
 
 // ═══════════════════════════════════════════════════════════════════
-// PAINTER MINIATURA
+// PAINTER MINIATURA (SIMULADOR VISUAL)
 // ═══════════════════════════════════════════════════════════════════
 class StylePreviewPainter extends CustomPainter {
   final String style;
@@ -837,6 +907,12 @@ class StylePreviewPainter extends CustomPainter {
 
     bool isEye(int r, int c) => (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
 
+    // NUEVO: Dibujar fondo Pepsi simulado si es Fusión
+    if (style == "Fusión (Logo Fondo)") {
+        canvas.drawRect(Rect.fromLTWH(0, 0, size.width/2, size.height), Paint()..color=Colors.red.shade700.withOpacity(0.18));
+        canvas.drawRect(Rect.fromLTWH(size.width/2, 0, size.width/2, size.height), Paint()..color=Colors.blue.shade900.withOpacity(0.18));
+    }
+
     final lPath = Path();
     final lPaint = Paint()..isAntiAlias=true..style=PaintingStyle.stroke
         ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
@@ -858,7 +934,7 @@ class StylePreviewPainter extends CustomPainter {
       }
 
       if (isEye(r,c)) return true; 
-      if (inCenter(r,c) && !style.contains("Formas")) return false;
+      if (inCenter(r,c) && !style.contains("Formas") && !style.contains("Fusión")) return false;
       return true;
     }
 
@@ -866,7 +942,11 @@ class StylePreviewPainter extends CustomPainter {
       if (!ok(r,c)) continue;
       final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
 
-      if (style.contains("Gusano")) {
+      // NUEVO: Simulador de Fusión
+      if (style == "Fusión (Logo Fondo)") {
+         Color dotColor = c < m / 2 ? Colors.red.shade700 : Colors.blue.shade900;
+         canvas.drawCircle(Offset(cx, cy), t * 0.42, Paint()..color = dotColor);
+      } else if (style.contains("Gusano")) {
         lPath.moveTo(cx,cy); lPath.lineTo(cx,cy);
         if (ok(r,c+1)) { lPath.moveTo(cx,cy); lPath.lineTo(cx+t,cy); }
         if (ok(r+1,c)) { lPath.moveTo(cx,cy); lPath.lineTo(cx,cy+t); }
@@ -907,6 +987,10 @@ class StylePreviewPainter extends CustomPainter {
     final pE = Paint()..isAntiAlias=true;
     final pI = Paint()..isAntiAlias=true;
     if (grad!=null) { pE.shader=grad; pI.shader=grad; } else { pE.color=c1; pI.color=c1; }
+    
+    // Si es fusión simulada, pintar los ojos de blanco/negro o color dominante
+    if (style == "Fusión (Logo Fondo)") { pE.color = Colors.black87; pI.color = Colors.black87; }
+
     void eye(double x, double y) {
       final s=7*t;
       canvas.drawPath(Path()
@@ -923,7 +1007,108 @@ class StylePreviewPainter extends CustomPainter {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// QR MASTER PAINTER
+// NUEVO: QR FUSION PAINTER (Mapeo Inteligente de Color)
+// ═══════════════════════════════════════════════════════════════════
+class QrFusionPainter extends CustomPainter {
+  final String data;
+  final ui.Image? logoUiImage;
+  final img_lib.Image? logoImage;
+  final String shape;
+  final Color dominantColor;
+  final bool customEyes;
+  final Color eyeExt, eyeInt;
+
+  const QrFusionPainter({
+    required this.data, required this.logoUiImage, required this.logoImage,
+    required this.shape, required this.dominantColor,
+    required this.customEyes, required this.eyeExt, required this.eyeInt,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final qr = _buildQrImage(data);
+    if (qr == null) return;
+    final int m = qr.moduleCount;
+    final double t = size.width / m;
+
+    // 1. Dibujar el logo completo en el fondo (difuminado al 80%) para efecto óptico
+    if (logoUiImage != null) {
+      final src = Rect.fromLTWH(0, 0, logoUiImage!.width.toDouble(), logoUiImage!.height.toDouble());
+      final dst = Rect.fromLTWH(0, 0, size.width, size.height);
+      canvas.drawImageRect(logoUiImage!, src, dst, Paint());
+      // Capa blanca translúcida para garantizar que los puntos oscuros contrasten
+      canvas.drawRect(dst, Paint()..color = Colors.white.withOpacity(0.75)..blendMode = BlendMode.srcOver);
+    }
+
+    // 2. Dibujar los puntos del QR leyendo el color de la imagen
+    for (int r = 0; r < m; r++) {
+      for (int c = 0; c < m; c++) {
+        if (!qr.isDark(r, c)) continue;
+        if (_isProtected(r, c, m)) continue; // Los ojos se dibujan después
+
+        Color dotColor = dominantColor; // Color por defecto si no hay imagen
+        
+        if (logoImage != null) {
+          // Extraer color del pixel equivalente
+          int px = (c / m * logoImage!.width).floor().clamp(0, logoImage!.width - 1);
+          int py = (r / m * logoImage!.height).floor().clamp(0, logoImage!.height - 1);
+          
+          final pixel = logoImage!.getPixel(px, py); // Para package image 4.0+
+          if (pixel.a > 20) {
+             dotColor = Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt());
+             
+             // SEGURIDAD DE CONTRASTE: Si el color del logo es muy claro (ej: amarillo), lo oscurecemos
+             final hsl = HSLColor.fromColor(dotColor);
+             if (hsl.lightness > 0.45) {
+                dotColor = hsl.withLightness(0.40).toColor(); // Freno oscuro para legibilidad
+             }
+          }
+        }
+
+        final paint = Paint()..color = dotColor..isAntiAlias = true;
+        final double cx = c * t + t / 2;
+        final double cy = r * t + t / 2;
+
+        // Renderizado del punto con hueco (Halftone effect)
+        if (shape == "Círculos") {
+          canvas.drawCircle(Offset(cx, cy), t * 0.42, paint);
+        } else { // Cuadrados suaves
+          canvas.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset(cx, cy), width: t * 0.82, height: t * 0.82),
+            Radius.circular(t * 0.2)), paint);
+        }
+      }
+    }
+
+    // 3. Dibujar Ojos Protegidos
+    final pE = Paint()..isAntiAlias = true..color = customEyes ? eyeExt : dominantColor;
+    final pI = Paint()..isAntiAlias = true..color = customEyes ? eyeInt : dominantColor;
+
+    void drawEye(double x, double y) {
+      final s = 7 * t;
+      if (shape == "Círculos") {
+        canvas.drawPath(Path()
+            ..addOval(Rect.fromLTWH(x, y, s, s))
+            ..addOval(Rect.fromLTWH(x + t, y + t, s - 2 * t, s - 2 * t))
+            ..fillType = PathFillType.evenOdd, pE);
+        canvas.drawOval(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.2 * t), pI);
+      } else {
+        canvas.drawPath(Path()
+            ..addRect(Rect.fromLTWH(x, y, s, s))
+            ..addRect(Rect.fromLTWH(x + t, y + t, s - 2 * t, s - 2 * t))
+            ..fillType = PathFillType.evenOdd, pE);
+        canvas.drawRect(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.4 * t), pI);
+      }
+    }
+
+    drawEye(0, 0); drawEye((m - 7) * t, 0); drawEye(0, (m - 7) * t);
+  }
+
+  @override bool shouldRepaint(CustomPainter o) => true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// QR MASTER PAINTER (Mantiene estilos básicos)
 // ═══════════════════════════════════════════════════════════════════
 class QrMasterPainter extends CustomPainter {
   final String data, estilo, qrMode, qrDir;
