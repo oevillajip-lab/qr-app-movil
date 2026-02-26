@@ -15,7 +15,43 @@ import 'package:flutter/rendering.dart';
 void main() => runApp(const MaterialApp(
     home: SplashScreen(), debugShowCheckedModeBanner: false));
 
-// ── Splash ────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// HELPER GLOBAL: QR seguro con versión automática 1-40
+// ═══════════════════════════════════════════════════════════════════
+QrImage? _buildQrImage(String data) {
+  try {
+    final qrCode = QrCode.fromData(
+      data: data,
+      errorCorrectLevel: QrErrorCorrectLevel.H,
+    );
+    return QrImage(qrCode);
+  } catch (_) {
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FRENO MATEMÁTICO UNIVERSAL
+// Nivel H soporta ~30% de módulos perdidos. Usamos 27% conservador.
+// Área excluida = (logoFrac + 2*auraFrac)² ≤ 0.27
+// logoFrac_max = √0.27 − 2*(aura/modules)
+// logoMaxPx = logoFrac_max * 270px
+// ═══════════════════════════════════════════════════════════════════
+double _safeLogoMax({
+  required int modules,
+  required double auraModules,
+  double canvasSize = 270.0,
+  double hardMax    = 85.0,
+  double hardMin    = 30.0,
+}) {
+  final double auraFrac = (auraModules * 2.0) / modules.toDouble();
+  final double maxFrac  = (math.sqrt(0.27) - auraFrac).clamp(0.08, 0.519);
+  return (maxFrac * canvasSize).clamp(hardMin, hardMax);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SPLASH
+// ═══════════════════════════════════════════════════════════════════
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
   @override
@@ -26,702 +62,1181 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(
-        const Duration(seconds: 2),
-        () => Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (context) => const MainScreen())));
+    Future.delayed(const Duration(seconds: 2), () => Navigator.pushReplacement(
+        context, MaterialPageRoute(builder: (_) => const MainScreen())));
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-            child: Image.asset('assets/app_icon.png',
-                width: 180,
-                errorBuilder: (c, e, s) =>
-                    const Icon(Icons.qr_code_2, size: 100))));
-  }
+  Widget build(BuildContext context) => Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(child: Image.asset('assets/app_icon.png', width: 180,
+          errorBuilder: (c, e, s) => const Icon(Icons.qr_code_2, size: 100))));
 }
 
-// ── Main Screen (Con Pestañas) ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// MAIN SCREEN
+// ═══════════════════════════════════════════════════════════════════
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
-  final TextEditingController _c1 = TextEditingController();
-  final TextEditingController _c2 = TextEditingController();
-  final TextEditingController _c3 = TextEditingController();
-  final TextEditingController _c4 = TextEditingController();
-  final TextEditingController _c5 = TextEditingController();
+class _MainScreenState extends State<MainScreen>
+    with SingleTickerProviderStateMixin {
+  final _c1 = TextEditingController();
+  final _c2 = TextEditingController();
+  final _c3 = TextEditingController();
+  final _c4 = TextEditingController();
+  final _c5 = TextEditingController();
 
-  String _qrType = "Sitio Web (URL)";
-  
-  // Variables Básico
-  String _estilo = "Liquid Pro (Gusano)";
-  String _qrColorMode = "Automático (Logo)";
-  String _qrGradDir = "Vertical";
-  
-  // Variables Avanzado
-  String _estiloAvanzado = "QR Circular";
+  String _qrType      = "Sitio Web (URL)";
+  String _estilo      = "Liquid Pro (Gusano)";
+  String _estiloAvz   = "QR Circular";
+  String _qrColorMode = "Sólido (Un Color)";
+  String _qrGradDir   = "Vertical";
+  Color  _qrC1        = Colors.black;
+  Color  _qrC2        = const Color(0xFF1565C0);
+  bool   _customEyes  = false;
+  Color  _eyeExt      = Colors.black;
+  Color  _eyeInt      = Colors.black;
+  String _bgMode      = "Blanco (Default)";
+  String _bgGradDir   = "Diagonal";
+  Color  _bgC1        = Colors.white;
+  Color  _bgC2        = const Color(0xFFF5F5F5);
 
-  Color _qrC1 = Colors.black;
-  Color _qrC2 = const Color(0xFF1565C0);
-  bool _customEyes = false;
-  Color _eyeExt = Colors.black;
-  Color _eyeInt = Colors.black;
-  String _bgMode = "Blanco (Default)";
-  String _bgGradDir = "Diagonal";
-  Color _bgC1 = Colors.white;
-  Color _bgC2 = const Color(0xFFF5F5F5);
+  Uint8List?        _logoBytes;
+  img_lib.Image?    _logoImage;
+  List<List<bool>>? _outerMask;
+  double _logoSize    = 60.0;
+  double _logoSizeMap = 200.0;
+  double _auraSize    = 1.0;
 
-  Uint8List? _logoBytes;
-  img_lib.Image? _logoImage;
-  List<List<bool>>? _outerMask; 
-  double _logoSize = 65.0;
-  double _logoSizeAvanzado = 200.0;
-  double _auraSize = 1.0; 
-
+  late TabController _tabCtrl;
   final GlobalKey _qrKey = GlobalKey();
 
+  static const _basicStyles = [
+    "Liquid Pro (Gusano)",
+    "Normal (Cuadrado)",
+    "Barras (Vertical)",
+    "Circular (Puntos)",
+    "Diamantes (Rombos)",
+  ];
+
+  static const _advStyles = [
+    "Liquid Pro (Gusano)",
+    "Normal (Cuadrado)",
+    "Barras (Vertical)",
+    "Circular (Puntos)",
+    "Diamantes (Rombos)",
+    "QR Circular",
+    "Split Liquid (Mitades)",
+    "Forma de Mapa (Máscara)",
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Efectivo logo con freno ────────────────────────────────────
+  double _effectiveLogo(bool isMap) {
+    if (isMap) return _logoSizeMap;
+    final data = _getFinalData();
+    if (data.isEmpty) return _logoSize;
+    final qr = _buildQrImage(data);
+    if (qr == null) return _logoSize;
+    final maxPx = _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize);
+    return _logoSize.clamp(30.0, maxPx);
+  }
+
+  // ── Procesar logo ──────────────────────────────────────────────
   Future<void> _processLogo(File file) async {
     final bytes = await file.readAsBytes();
-    img_lib.Image? image = img_lib.decodeImage(bytes);
-    if (image == null) return;
+    img_lib.Image? img = img_lib.decodeImage(bytes);
+    if (img == null) return;
+    img = img.convert(numChannels: 4);
+    final ext = file.path.toLowerCase();
+    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
 
-    image = image.convert(numChannels: 4);
-    final String ext = file.path.toLowerCase();
-    final bool isJpg = ext.endsWith('.jpg') || ext.endsWith('.jpeg');
-
-    if (isJpg) {
-      image = _removeWhiteBackground(image);
-    }
-
-    final int w = image.width;
-    final int h = image.height;
-
-    List<List<bool>> rowBound = List.generate(h, (_) => List.filled(w, false));
+    final w = img.width, h = img.height;
+    final rB = List.generate(h, (_) => List.filled(w, false));
     for (int y = 0; y < h; y++) {
-      int firstX = -1, lastX = -1;
-      for (int x = 0; x < w; x++) {
-        if (image.getPixel(x, y).a > 30) {
-          if (firstX == -1) firstX = x;
-          lastX = x;
-        }
-      }
-      if (firstX != -1) {
-        for (int x = firstX; x <= lastX; x++) rowBound[y][x] = true;
-      }
+      int fx = -1, lx = -1;
+      for (int x = 0; x < w; x++) if (img.getPixel(x,y).a > 30) { if (fx==-1) fx=x; lx=x; }
+      if (fx != -1) for (int x = fx; x <= lx; x++) rB[y][x] = true;
     }
-
-    List<List<bool>> finalMask = List.generate(h, (_) => List.filled(w, false));
+    final mask = List.generate(h, (_) => List.filled(w, false));
     for (int x = 0; x < w; x++) {
-      int firstY = -1, lastY = -1;
-      for (int y = 0; y < h; y++) {
-        if (image.getPixel(x, y).a > 30) {
-          if (firstY == -1) firstY = y;
-          lastY = y;
-        }
-      }
-      if (firstY != -1) {
-        for (int y = firstY; y <= lastY; y++) {
-          if (rowBound[y][x]) finalMask[y][x] = true; 
-        }
-      }
+      int fy = -1, ly = -1;
+      for (int y = 0; y < h; y++) if (img.getPixel(x,y).a > 30) { if (fy==-1) fy=y; ly=y; }
+      if (fy != -1) for (int y = fy; y <= ly; y++) if (rB[y][x]) mask[y][x] = true;
     }
-
-    final pngBytes = Uint8List.fromList(img_lib.encodePng(image));
-    final palette = await PaletteGenerator.fromImageProvider(MemoryImage(pngBytes));
-
+    final png     = Uint8List.fromList(img_lib.encodePng(img));
+    final palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
     setState(() {
-      _logoBytes = pngBytes;
-      _logoImage = image;
-      _outerMask = finalMask;
-      if (_qrColorMode == "Automático (Logo)") {
-        _qrC1 = palette.darkVibrantColor?.color ?? palette.darkMutedColor?.color ?? palette.dominantColor?.color ?? Colors.black;
-        _qrC2 = palette.vibrantColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1; 
-      }
+      _logoBytes  = png;
+      _logoImage  = img;
+      _outerMask  = mask;
+      _qrC1 = palette.darkVibrantColor?.color ?? palette.darkMutedColor?.color ?? palette.dominantColor?.color ?? Colors.black;
+      _qrC2 = palette.vibrantColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1;
+      _qrColorMode = "Automático (Logo)";
     });
   }
 
-  img_lib.Image _removeWhiteBackground(img_lib.Image src) {
-    final int w = src.width;
-    final int h = src.height;
-    const int thresh = 230;
-
-    final visited = List.generate(h, (_) => List.filled(w, false));
-    final queue = <List<int>>[];
-
-    void enqueue(int x, int y) {
-      if (x < 0 || x >= w || y < 0 || y >= h) return;
-      if (visited[y][x]) return;
-      final p = src.getPixel(x, y);
-      if (p.r > thresh && p.g > thresh && p.b > thresh) {
-        visited[y][x] = true; queue.add([x, y]);
-      }
+  img_lib.Image _removeWhiteBg(img_lib.Image src) {
+    final w = src.width, h = src.height;
+    const thr = 230;
+    final vis = List.generate(h, (_) => List.filled(w, false));
+    final q   = <List<int>>[];
+    void enq(int x, int y) {
+      if (x<0||x>=w||y<0||y>=h||vis[y][x]) return;
+      final p = src.getPixel(x,y);
+      if (p.r>thr&&p.g>thr&&p.b>thr) { vis[y][x]=true; q.add([x,y]); }
     }
-
-    for (int x = 0; x < w; x++) { enqueue(x, 0); enqueue(x, h - 1); }
-    for (int y = 0; y < h; y++) { enqueue(0, y); enqueue(w - 1, y); }
-
-    while (queue.isNotEmpty) {
-      final pos = queue.removeLast();
-      final int x = pos[0]; final int y = pos[1];
-      enqueue(x + 1, y); enqueue(x - 1, y); enqueue(x, y + 1); enqueue(x, y - 1);
+    for (int x=0; x<w; x++) { enq(x,0); enq(x,h-1); }
+    for (int y=0; y<h; y++) { enq(0,y); enq(w-1,y); }
+    while (q.isNotEmpty) {
+      final p=q.removeLast();
+      enq(p[0]+1,p[1]); enq(p[0]-1,p[1]); enq(p[0],p[1]+1); enq(p[0],p[1]-1);
     }
-
-    final result = img_lib.Image(width: w, height: h, numChannels: 4);
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        final p = src.getPixel(x, y);
-        if (visited[y][x]) {
-          result.setPixelRgba(x, y, 0, 0, 0, 0);
-        } else {
-          result.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), 255);
-        }
-      }
+    final res = img_lib.Image(width: w, height: h, numChannels: 4);
+    for (int y=0; y<h; y++) for (int x=0; x<w; x++) {
+      final p = src.getPixel(x,y);
+      if (vis[y][x]) res.setPixelRgba(x,y,0,0,0,0);
+      else res.setPixelRgba(x,y,p.r.toInt(),p.g.toInt(),p.b.toInt(),255);
     }
-    return result;
+    return res;
   }
 
   String _getFinalData() {
     if (_c1.text.isEmpty) return "";
     switch (_qrType) {
-      case "Sitio Web (URL)": return _c1.text;
-      case "Red WiFi": return "WIFI:T:WPA;S:${_c1.text};P:${_c2.text};;";
+      case "Sitio Web (URL)":  return _c1.text;
+      case "Red WiFi":         return "WIFI:T:WPA;S:${_c1.text};P:${_c2.text};;";
       case "VCard (Contacto)": return "BEGIN:VCARD\nVERSION:3.0\nFN:${_c1.text} ${_c2.text}\nORG:${_c3.text}\nTEL:${_c4.text}\nEMAIL:${_c5.text}\nEND:VCARD";
-      case "WhatsApp": return "https://wa.me/${_c1.text.replaceAll('+', '')}?text=${Uri.encodeComponent(_c2.text)}";
-      case "E-mail": return "mailto:${_c1.text}?subject=${_c2.text}&body=${_c3.text}";
-      case "SMS (Mensaje)": return "SMSTO:${_c1.text}:${_c2.text}";
-      case "Teléfono": return "tel:${_c1.text}";
-      default: return _c1.text;
+      case "WhatsApp":         return "https://wa.me/${_c1.text.replaceAll('+','')}?text=${Uri.encodeComponent(_c2.text)}";
+      case "E-mail":           return "mailto:${_c1.text}?subject=${_c2.text}&body=${_c3.text}";
+      case "SMS (Mensaje)":    return "SMSTO:${_c1.text}:${_c2.text}";
+      case "Teléfono":         return "tel:${_c1.text}";
+      default:                 return _c1.text;
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: Colors.grey[100],
-        appBar: AppBar(
-            title: const Text("QR + Logo PRO", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-            backgroundColor: Colors.white, elevation: 0, centerTitle: true,
-            bottom: const TabBar(
-              labelColor: Colors.black,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: Colors.black,
-              tabs: [Tab(text: "Básico"), Tab(text: "Avanzado")],
-            )
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F4F6),
+      appBar: AppBar(
+        title: const Text("QR + Logo PRO",
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800,
+                fontSize: 18, letterSpacing: -0.5)),
+        backgroundColor: Colors.white, elevation: 0, centerTitle: true,
+        bottom: TabBar(
+          controller: _tabCtrl,
+          labelColor: Colors.black,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Colors.black,
+          indicatorWeight: 3,
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          tabs: const [Tab(text: "Básico"), Tab(text: "Avanzado")],
         ),
-        body: TabBarView(
-          children: [
-            _buildTabContent(isAdvanced: false),
-            _buildTabContent(isAdvanced: true),
+      ),
+      body: TabBarView(
+        controller: _tabCtrl,
+        children: [_buildBasicTab(), _buildAdvancedTab()],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // TAB BÁSICO
+  // ══════════════════════════════════════════════════════════════
+  Widget _buildBasicTab() {
+    final data    = _getFinalData();
+    final isEmpty = data.isEmpty;
+    final effLogo = _effectiveLogo(false);
+    final limited = _logoBytes != null && effLogo < _logoSize - 0.5;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 30),
+      child: Column(children: [
+
+        // 1. Selector visual de estilo
+        _card("1. Estilo del QR", _styleSelector(_basicStyles, _estilo,
+            (s) => setState(() => _estilo = s))),
+
+        // 2. Contenido
+        _card("2. Contenido", Column(children: [
+          _typeDropdown(),
+          const SizedBox(height: 10),
+          _buildInputs(),
+        ])),
+
+        // 3. Logo
+        _card("3. Logo", _logoSection(effLogo, limited, false)),
+
+        // 4. Fondo (básico: 3 opciones sin degradado)
+        _card("4. Fondo", Column(children: [
+          DropdownButtonFormField<String>(
+              value: (_bgMode == "Degradado") ? "Blanco (Default)" : _bgMode,
+              items: ["Blanco (Default)", "Transparente", "Sólido (Color)"]
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              onChanged: (v) => setState(() => _bgMode = v!)),
+          if (_bgMode == "Sólido (Color)") ...[
+            const SizedBox(height: 8),
+            _colorRow("Color fondo", _bgC1, null,
+                (c) => setState(() => _bgC1 = c), null),
           ],
+        ])),
+
+        const SizedBox(height: 10),
+        _qrPreview(data, isEmpty, _estilo, false, effLogo),
+        const SizedBox(height: 20),
+        _actionButtons(isEmpty),
+      ]),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // TAB AVANZADO
+  // ══════════════════════════════════════════════════════════════
+  Widget _buildAdvancedTab() {
+    final data      = _getFinalData();
+    final isEmpty   = data.isEmpty;
+    final isMap     = _estiloAvz == "Forma de Mapa (Máscara)";
+    final effLogo   = _effectiveLogo(isMap);
+    final limited   = _logoBytes != null && !isMap && effLogo < _logoSize - 0.5;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 30),
+      child: Column(children: [
+
+        // 1. Contenido
+        _card("1. Contenido", Column(children: [
+          _typeDropdown(),
+          const SizedBox(height: 10),
+          _buildInputs(),
+        ])),
+
+        // 2. Estilo avanzado (selector visual con todos)
+        _card("2. Estilo del QR", _styleSelector(_advStyles, _estiloAvz,
+            (s) => setState(() => _estiloAvz = s))),
+
+        // 3. Color y degradado
+        _card("3. Color y Degradado", Column(children: [
+          DropdownButtonFormField<String>(
+              value: _qrColorMode,
+              items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"]
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              onChanged: (v) => setState(() => _qrColorMode = v!)),
+          const SizedBox(height: 4),
+          _colorRow("Color QR",
+              _qrC1, _qrColorMode != "Sólido (Un Color)" ? _qrC2 : null,
+              (c) => setState(() => _qrC1 = c),
+              (c) => setState(() => _qrC2 = c)),
+          if (_qrColorMode == "Degradado Custom")
+            DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: "Dirección degradado"),
+                value: _qrGradDir,
+                items: ["Vertical", "Horizontal", "Diagonal"]
+                    .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                onChanged: (v) => setState(() => _qrGradDir = v!)),
+        ])),
+
+        // 4. Ojos
+        _card("4. Ojos del QR", Column(children: [
+          SwitchListTile(
+              title: const Text("Personalizar color de ojos"),
+              value: _customEyes,
+              onChanged: (v) => setState(() => _customEyes = v),
+              contentPadding: EdgeInsets.zero),
+          if (_customEyes)
+            _colorRow("Ojos: exterior / interior",
+                _eyeExt, _eyeInt,
+                (c) => setState(() => _eyeExt = c),
+                (c) => setState(() => _eyeInt = c)),
+        ])),
+
+        // 5. Logo
+        _card("5. Logo", _logoSection(effLogo, limited, isMap)),
+
+        // 6. Fondo completo
+        _card("6. Fondo", Column(children: [
+          DropdownButtonFormField<String>(
+              value: _bgMode,
+              items: ["Blanco (Default)", "Transparente", "Sólido (Color)", "Degradado"]
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              onChanged: (v) => setState(() => _bgMode = v!)),
+          if (_bgMode != "Blanco (Default)" && _bgMode != "Transparente") ...[
+            const SizedBox(height: 6),
+            _colorRow("Color fondo",
+                _bgC1, _bgMode == "Degradado" ? _bgC2 : null,
+                (c) => setState(() => _bgC1 = c),
+                (c) => setState(() => _bgC2 = c)),
+            if (_bgMode == "Degradado")
+              DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: "Dirección fondo"),
+                  value: _bgGradDir,
+                  items: ["Vertical", "Horizontal", "Diagonal"]
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                  onChanged: (v) => setState(() => _bgGradDir = v!)),
+          ],
+        ])),
+
+        const SizedBox(height: 10),
+        _qrPreview(data, isEmpty, _estiloAvz, true, effLogo),
+        const SizedBox(height: 20),
+        _actionButtons(isEmpty),
+      ]),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SELECTOR VISUAL DE ESTILO
+  // ══════════════════════════════════════════════════════════════
+  Widget _styleSelector(List<String> styles, String selected, Function(String) onSelect) {
+    return SizedBox(
+      height: 128,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        itemCount: styles.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (ctx, i) {
+          final style = styles[i];
+          final sel   = style == selected;
+          return GestureDetector(
+            onTap: () => onSelect(style),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 96,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: sel ? Colors.black : Colors.grey.shade200,
+                    width: sel ? 2.5 : 1.5),
+                boxShadow: sel
+                    ? [BoxShadow(color: Colors.black.withOpacity(0.14),
+                        blurRadius: 10, offset: const Offset(0, 4))]
+                    : [BoxShadow(color: Colors.black.withOpacity(0.04),
+                        blurRadius: 4)],
+              ),
+              child: Column(children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    child: Stack(alignment: Alignment.center, children: [
+                      SizedBox(
+                        width: 92, height: 92,
+                        child: CustomPaint(
+                          painter: StylePreviewPainter(
+                              style: style, c1: _qrC1, c2: _qrC2),
+                        ),
+                      ),
+                      // Logo o placeholder "TU LOGO"
+                      if (_logoBytes != null)
+                        SizedBox(width: 24, height: 24,
+                            child: Image.memory(_logoBytes!, fit: BoxFit.contain))
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.88),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: Colors.grey.shade300, width: 0.8),
+                          ),
+                          child: const Text("TU\nLOGO",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900,
+                                  color: Colors.black87, height: 1.15,
+                                  letterSpacing: 0.3)),
+                        ),
+                    ]),
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  decoration: BoxDecoration(
+                    color: sel ? Colors.black : Colors.grey.shade50,
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                  ),
+                  child: Text(_shortName(style),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 10, fontWeight: FontWeight.w700,
+                          color: sel ? Colors.white : Colors.black87,
+                          letterSpacing: -0.2)),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  String _shortName(String s) {
+    if (s.contains("Gusano"))   return "Liquid";
+    if (s.contains("Cuadrado")) return "Normal";
+    if (s.contains("Barras"))   return "Barras";
+    if (s.contains("Puntos"))   return "Círculos";
+    if (s.contains("Rombos"))   return "Diamantes";
+    if (s.contains("Circular") && !s.contains("QR")) return "Circular";
+    if (s.contains("QR Circ"))  return "QR Circular";
+    if (s.contains("Split"))    return "Split";
+    if (s.contains("Mapa"))     return "Mapa";
+    return s;
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SECCIÓN LOGO (compartida básico/avanzado)
+  // ══════════════════════════════════════════════════════════════
+  Widget _logoSection(double effLogo, bool limited, bool isMap) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ElevatedButton.icon(
+          onPressed: () async {
+            final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+            if (img != null) await _processLogo(File(img.path));
+          },
+          icon: const Icon(Icons.image),
+          label: Text(_logoBytes == null ? "CARGAR LOGO" : "LOGO CARGADO ✅"),
+          style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: Colors.black, foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))),
+      const Padding(padding: EdgeInsets.only(top: 8, bottom: 2),
+          child: Text("💡 Si tu logo es blanco, elige un fondo oscuro.",
+              style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic))),
+      if (_logoBytes != null) ...[
+        const SizedBox(height: 10),
+        if (!isMap) ...[
+          // Tamaño con indicador de freno
+          Row(children: [
+            Text("Tamaño: ${effLogo.toInt()}px",
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const Spacer(),
+            if (limited)
+              Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.orange.shade200)),
+                  child: const Text("⚠️ limitado automático",
+                      style: TextStyle(fontSize: 11, color: Colors.deepOrange,
+                          fontWeight: FontWeight.w600))),
+          ]),
+          Slider(value: _logoSize, min: 30, max: 85, divisions: 11,
+              activeColor: Colors.black,
+              onChanged: (v) => setState(() => _logoSize = v)),
+          // Aura
+          Row(children: [
+            const Text("Separación QR–Logo:",
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const Spacer(),
+            Text("${_auraSize.toInt()} módulo(s)",
+                style: const TextStyle(fontSize: 12)),
+          ]),
+          Slider(value: _auraSize, min: 0, max: 3, divisions: 3,
+              activeColor: Colors.black,
+              onChanged: (v) => setState(() => _auraSize = v)),
+        ] else ...[
+          // Modo mapa: logo interno grande
+          Text("Tamaño interno: ${_logoSizeMap.toInt()}px",
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          Slider(value: _logoSizeMap, min: 50, max: 270, divisions: 22,
+              activeColor: Colors.black,
+              onChanged: (v) => setState(() => _logoSizeMap = v)),
+        ],
+      ],
+    ]);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PREVIEW QR
+  // ══════════════════════════════════════════════════════════════
+  Widget _qrPreview(String data, bool isEmpty, String estilo, bool isAdv, double effLogo) {
+    final isMap      = estilo == "Forma de Mapa (Máscara)";
+    final isAdvStyle = isAdv && (estilo == "QR Circular" ||
+        estilo == "Split Liquid (Mitades)" || isMap);
+    final bgColor = _bgMode == "Transparente"  ? Colors.transparent
+        : _bgMode == "Sólido (Color)"          ? _bgC1
+        : Colors.white;
+    final bgGrad  = _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null;
+
+    return RepaintBoundary(
+      key: _qrKey,
+      child: Container(
+        width: 320, height: 320,
+        decoration: BoxDecoration(
+          color: bgGrad == null ? bgColor : null,
+          gradient: bgGrad,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
+              blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        child: Center(
+          child: isEmpty
+              ? Column(mainAxisAlignment: MainAxisAlignment.center, children: const [
+                  Icon(Icons.qr_code_2, size: 56, color: Colors.black12),
+                  SizedBox(height: 8),
+                  Text("Esperando contenido...",
+                      style: TextStyle(color: Colors.grey, fontSize: 14)),
+                ])
+              : Stack(alignment: Alignment.center, children: [
+                  CustomPaint(
+                    size: const Size(270, 270),
+                    painter: isAdvStyle
+                        ? QrAdvancedPainter(
+                            data: data, estiloAvanzado: estilo,
+                            logoImage: _logoImage, outerMask: _outerMask,
+                            logoSize: isMap ? _logoSizeMap : effLogo,
+                            auraSize: _auraSize,
+                            qrC1: _qrC1, qrC2: _qrC2,
+                            qrMode: _qrColorMode, qrDir: _qrGradDir,
+                            customEyes: _customEyes,
+                            eyeExt: _eyeExt, eyeInt: _eyeInt)
+                        : QrMasterPainter(
+                            data: data, estilo: estilo,
+                            logoImage: _logoImage, outerMask: _outerMask,
+                            logoSize: effLogo, auraSize: _auraSize,
+                            qrC1: _qrC1, qrC2: _qrC2,
+                            qrMode: _qrColorMode, qrDir: _qrGradDir,
+                            customEyes: _customEyes,
+                            eyeExt: _eyeExt, eyeInt: _eyeInt),
+                  ),
+                  if (_logoBytes != null && !isMap)
+                    SizedBox(width: effLogo, height: effLogo,
+                        child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
+                ]),
         ),
       ),
     );
   }
 
-  Widget _buildTabContent({required bool isAdvanced}) {
-    final String finalData = _getFinalData();
-    final bool isEmpty = finalData.isEmpty;
-
-    bool showLogoOverlay = true;
-    bool showAuraSlider = true;
-    
-    if (isAdvanced) {
-      if (_estiloAvanzado == "Forma de Mapa (Máscara)" || _estiloAvanzado == "Logo Fusión (Camuflaje)") {
-        showLogoOverlay = false;
-        showAuraSlider = false;
-      }
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(15),
-      child: Column(children: [
-        _buildCard("1. Contenido", Column(children: [
-          DropdownButtonFormField<String>(
-              value: _qrType,
-              items: ["Sitio Web (URL)", "WhatsApp", "Red WiFi", "VCard (Contacto)", "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-              onChanged: (v) => setState(() => _qrType = v!)),
-          const SizedBox(height: 10),
-          _buildInputs(),
-        ])),
-
-        if (!isAdvanced)
-          _buildCard("2. Estilo y Color QR", Column(children: [
-            DropdownButtonFormField<String>(
-                value: _estilo,
-                items: ["Liquid Pro (Gusano)", "Normal (Cuadrado)", "Barras (Vertical)", "Circular (Puntos)", "Diamantes (Rombos)"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (v) => setState(() => _estilo = v!)),
-            DropdownButtonFormField<String>(
-                value: _qrColorMode,
-                items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (v) => setState(() => _qrColorMode = v!)),
-            _buildColorPicker("Colores QR", _qrC1, _qrC2, (c) => setState(() => _qrC1 = c), (c) => setState(() => _qrC2 = c), isGrad: _qrColorMode != "Sólido (Un Color)"),
-            if (_qrColorMode != "Sólido (Un Color)")
-              DropdownButtonFormField<String>(decoration: const InputDecoration(labelText: "Dirección Degradado"), value: _qrGradDir, items: ["Vertical", "Horizontal", "Diagonal"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _qrGradDir = v!)),
-          ]))
-        else
-          _buildCard("2. Estilo Avanzado", Column(children: [
-            DropdownButtonFormField<String>(
-                value: _estiloAvanzado,
-                items: ["QR Circular", "Split Liquid (Mitades)", "Forma de Mapa (Máscara)", "Logo Fusión (Camuflaje)"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (v) => setState(() => _estiloAvanzado = v!)),
-             _buildColorPicker("Colores Base", _qrC1, _qrC2, (c) => setState(() => _qrC1 = c), (c) => setState(() => _qrC2 = c), isGrad: true),
-             const Padding(
-              padding: EdgeInsets.only(top: 8.0),
-              child: Text("⚠️ Cuidado: Forma de Mapa y Fusión requieren que subas un logo de buena calidad para tomar su forma o color.", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-            ),
-          ])),
-
-        _buildCard("3. Posicionamiento y Fondo", Column(children: [
-          SwitchListTile(title: const Text("Personalizar Ojos"), value: _customEyes, onChanged: (v) => setState(() => _customEyes = v), contentPadding: EdgeInsets.zero),
-          if (_customEyes) _buildColorPicker("Colores Ojos", _eyeExt, _eyeInt, (c) => setState(() => _eyeExt = c), (c) => setState(() => _eyeInt = c), isGrad: true),
-          const Divider(),
-          DropdownButtonFormField<String>(value: _bgMode, items: ["Blanco (Default)", "Transparente", "Sólido (Color)", "Degradado"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _bgMode = v!)),
-          if (_bgMode != "Blanco (Default)" && _bgMode != "Transparente") ...[
-            _buildColorPicker("Colores Fondo", _bgC1, _bgC2, (c) => setState(() => _bgC1 = c), (c) => setState(() => _bgC2 = c), isGrad: _bgMode == "Degradado"),
-            if (_bgMode == "Degradado")
-              DropdownButtonFormField<String>(decoration: const InputDecoration(labelText: "Dirección Fondo"), value: _bgGradDir, items: ["Vertical", "Horizontal", "Diagonal"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _bgGradDir = v!)),
-          ]
-        ])),
-
-        _buildCard("4. Logo", Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ElevatedButton.icon(
-              onPressed: () async {
-                final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-                if (img != null) await _processLogo(File(img.path));
-              },
-              icon: const Icon(Icons.image),
-              label: Text(_logoBytes == null ? "CARGAR LOGO" : "LOGO CARGADO ✅"),
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.black, foregroundColor: Colors.white)),
-          const Padding(padding: EdgeInsets.only(top: 8.0, bottom: 4.0), child: Text("💡 Nota: Si su diseño es blanco, seleccione un fondo oscuro.", style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic))),
-          if (_logoBytes != null) ...[
-            const SizedBox(height: 12),
-            if (showLogoOverlay) ...[
-              Text("Tamaño del logo: ${_logoSize.toInt()}px (Tope Seguro)"),
-              Slider(value: _logoSize, min: 30, max: 75, divisions: 9, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSize = v)),
-            ] else ...[
-              Text("Tamaño del logo interno: ${_logoSizeAvanzado.toInt()}px"),
-              Slider(value: _logoSizeAvanzado, min: 50, max: 270, divisions: 22, activeColor: Colors.black, onChanged: (v) => setState(() => _logoSizeAvanzado = v)),
-            ]
-          ],
-        ])),
-
-        if (showAuraSlider)
-          _buildCard("5. Ajuste de Aura (Separación QR ↔ Logo)", Column(children: [
-            Text("Margen: ${_auraSize.toInt()} Nivel(es)"),
-            Slider(value: _auraSize, min: 0, max: 3, divisions: 3, activeColor: Colors.black, onChanged: (v) => setState(() => _auraSize = v)),
-          ])),
-
-        const SizedBox(height: 10),
-
-        RepaintBoundary(
-          key: _qrKey,
-          child: Container(
-            width: 320, height: 320,
-            decoration: BoxDecoration(color: _bgMode == "Transparente" ? Colors.transparent : (_bgMode == "Sólido (Color)" ? _bgC1 : Colors.white), gradient: _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null),
-            child: Center(
-              child: isEmpty
-                  ? const Text("Esperando contenido...", style: TextStyle(color: Colors.grey))
-                  : Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CustomPaint(
-                          size: const Size(270, 270),
-                          painter: isAdvanced 
-                            ? QrAdvancedPainter(
-                                data: finalData, estiloAvanzado: _estiloAvanzado, logoImage: _logoImage, outerMask: _outerMask, 
-                                logoSize: showLogoOverlay ? _logoSize : _logoSizeAvanzado, 
-                                auraSize: _auraSize,
-                                qrC1: _qrC1, qrC2: _qrC2, customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-                              )
-                            : QrMasterPainter(
-                                data: finalData, estilo: _estilo, logoImage: _logoImage, outerMask: _outerMask, logoSize: _logoSize, auraSize: _auraSize,
-                                qrC1: _qrC1, qrC2: _qrC2, qrMode: _qrColorMode, qrDir: _qrGradDir, customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-                              ),
-                        ),
-                        if (_logoBytes != null && showLogoOverlay) 
-                          SizedBox(width: _logoSize, height: _logoSize, child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
-                      ],
-                    ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 25),
-        Row(
-          children: [
-            Expanded(child: ElevatedButton.icon(onPressed: isEmpty ? null : () => _exportar(), icon: const Icon(Icons.save_alt), label: const Text("GUARDAR"), style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 60)))),
-            const SizedBox(width: 15),
-            Expanded(child: ElevatedButton.icon(onPressed: isEmpty ? null : () => _compartir(), icon: const Icon(Icons.share), label: const Text("COMPARTIR"), style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 60)))),
-          ],
-        ),
-        const SizedBox(height: 40),
-      ]),
-    );
-  }
-
-  LinearGradient _getGrad(Color c1, Color c2, String dir) {
-    Alignment beg = Alignment.topCenter; Alignment end = Alignment.bottomCenter;
-    if (dir == "Horizontal") { beg = Alignment.centerLeft; end = Alignment.centerRight; }
-    if (dir == "Diagonal") { beg = Alignment.topLeft; end = Alignment.bottomRight; }
-    return LinearGradient(colors: [c1, c2], begin: beg, end: end);
-  }
-
+  // ══════════════════════════════════════════════════════════════
+  // INPUTS CON HINTS CORRECTOS
+  // ══════════════════════════════════════════════════════════════
   Widget _buildInputs() {
     switch (_qrType) {
-      case "VCard (Contacto)": return Column(children: [Row(children: [Expanded(child: TextField(controller: _c1, decoration: const InputDecoration(hintText: "Nombre"), onChanged: (v) => setState(() {}))), const SizedBox(width: 5), Expanded(child: TextField(controller: _c2, decoration: const InputDecoration(hintText: "Apellido"), onChanged: (v) => setState(() {})))]), TextField(controller: _c3, decoration: const InputDecoration(hintText: "Empresa"), onChanged: (v) => setState(() {})), TextField(controller: _c4, decoration: const InputDecoration(hintText: "Teléfono"), keyboardType: TextInputType.phone, onChanged: (v) => setState(() {})), TextField(controller: _c5, decoration: const InputDecoration(hintText: "Email"), keyboardType: TextInputType.emailAddress, onChanged: (v) => setState(() {}))]);
+      case "Sitio Web (URL)":
+        return _field(_c1, "Ej: https://mipagina.com");
       case "WhatsApp":
-      case "SMS (Mensaje)": return Column(children: [TextField(controller: _c1, decoration: const InputDecoration(hintText: "Número (+595...)"), keyboardType: TextInputType.phone, onChanged: (v) => setState(() {})), TextField(controller: _c2, decoration: const InputDecoration(hintText: "Mensaje"), onChanged: (v) => setState(() {}))]);
-      case "Red WiFi": return Column(children: [TextField(controller: _c1, decoration: const InputDecoration(hintText: "SSID (Nombre Red)"), onChanged: (v) => setState(() {})), TextField(controller: _c2, decoration: const InputDecoration(hintText: "Contraseña"), onChanged: (v) => setState(() {}))]);
-      case "E-mail": return Column(children: [TextField(controller: _c1, decoration: const InputDecoration(hintText: "Email Destino"), keyboardType: TextInputType.emailAddress, onChanged: (v) => setState(() {})), TextField(controller: _c2, decoration: const InputDecoration(hintText: "Asunto"), onChanged: (v) => setState(() {})), TextField(controller: _c3, decoration: const InputDecoration(hintText: "Mensaje"), onChanged: (v) => setState(() {}))]);
-      default: return TextField(controller: _c1, decoration: InputDecoration(hintText: _qrType == "Sitio Web (URL)" ? "https://..." : "Texto aquí..."), onChanged: (v) => setState(() {}));
+        return Column(children: [
+          _field(_c1, "Número con código (+595981...)", type: TextInputType.phone),
+          _field(_c2, "Mensaje predefinido (opcional)"),
+        ]);
+      case "Red WiFi":
+        return Column(children: [
+          _field(_c1, "Nombre de la red (SSID)"),
+          _field(_c2, "Contraseña del WiFi", obscure: true),
+        ]);
+      case "VCard (Contacto)":
+        return Column(children: [
+          Row(children: [
+            Expanded(child: _field(_c1, "Nombre")),
+            const SizedBox(width: 8),
+            Expanded(child: _field(_c2, "Apellido")),
+          ]),
+          _field(_c3, "Empresa / Organización"),
+          _field(_c4, "Teléfono (+595...)", type: TextInputType.phone),
+          _field(_c5, "Correo electrónico", type: TextInputType.emailAddress),
+        ]);
+      case "Teléfono":
+        return _field(_c1, "Número a marcar (+595981...)", type: TextInputType.phone);
+      case "E-mail":
+        return Column(children: [
+          _field(_c1, "Correo destino", type: TextInputType.emailAddress),
+          _field(_c2, "Asunto del correo"),
+          _field(_c3, "Cuerpo del mensaje"),
+        ]);
+      case "SMS (Mensaje)":
+        return Column(children: [
+          _field(_c1, "Número destino (+595...)", type: TextInputType.phone),
+          _field(_c2, "Texto del SMS"),
+        ]);
+      default: // Texto Libre
+        return _field(_c1, "Escribe tu texto aquí...", maxLines: 3);
     }
   }
 
-  Widget _buildCard(String title, Widget child) { return Card(elevation: 0, shape: RoundedRectangleBorder(side: BorderSide(color: Colors.grey[300]!), borderRadius: BorderRadius.circular(10)), margin: const EdgeInsets.only(bottom: 15), child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 5), child]))); }
-  Widget _buildColorPicker(String label, Color c1, Color c2, Function(Color) onC1, Function(Color) onC2, {bool isGrad = false}) { return Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [Text(label), const Spacer(), _colorBtn(c1, onC1), if (isGrad) ...[const SizedBox(width: 15), _colorBtn(c2, onC2)]])); }
-  Widget _colorBtn(Color current, Function(Color) onTap) { return GestureDetector(onTap: () => _showPalette(onTap), child: CircleAvatar(backgroundColor: current, radius: 20, child: Icon(Icons.colorize, size: 16, color: current == Colors.white ? Colors.black : Colors.white))); }
-  void _showPalette(Function(Color) onSelect) { showDialog(context: context, builder: (ctx) => AlertDialog(content: Wrap(spacing: 12, runSpacing: 12, children: [Colors.black, Colors.white, Colors.red, Colors.blue, Colors.green, Colors.orange, Colors.purple, const Color(0xFF1565C0), Colors.grey].map((c) => GestureDetector(onTap: () { onSelect(c); Navigator.pop(ctx); }, child: CircleAvatar(backgroundColor: c, radius: 25))).toList()))); }
-  Future<void> _exportar() async { final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary; final ui.Image image = await boundary.toImage(pixelRatio: 4.0); final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png); await ImageGallerySaver.saveImage(byteData!.buffer.asUint8List()); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ QR Guardado"))); }
-  Future<void> _compartir() async { final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary; final ui.Image image = await boundary.toImage(pixelRatio: 4.0); final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png); final Uint8List pngBytes = byteData!.buffer.asUint8List(); final tempDir = await getTemporaryDirectory(); final file = await File('${tempDir.path}/qr_generado.png').create(); await file.writeAsBytes(pngBytes); await Share.shareXFiles([XFile(file.path)], text: 'Generado con QR + Logo'); }
+  Widget _field(TextEditingController c, String hint,
+      {TextInputType type = TextInputType.text,
+      bool obscure = false, int maxLines = 1}) =>
+      TextField(
+          controller: c,
+          decoration: InputDecoration(hintText: hint),
+          keyboardType: type,
+          obscureText: obscure,
+          maxLines: maxLines,
+          onChanged: (_) => setState(() {}));
+
+  // ══════════════════════════════════════════════════════════════
+  // HELPERS UI
+  // ══════════════════════════════════════════════════════════════
+  Widget _typeDropdown() => DropdownButtonFormField<String>(
+      value: _qrType,
+      decoration: const InputDecoration(labelText: "Tipo de QR"),
+      items: ["Sitio Web (URL)", "WhatsApp", "Red WiFi", "VCard (Contacto)",
+              "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre"]
+          .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+      onChanged: (v) => setState(() => _qrType = v!));
+
+  Widget _card(String title, Widget child) => Card(
+      elevation: 0, color: Colors.white,
+      shape: RoundedRectangleBorder(
+          side: BorderSide(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(14)),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(padding: const EdgeInsets.all(14), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800,
+            fontSize: 14, letterSpacing: -0.3)),
+        const SizedBox(height: 10),
+        child,
+      ])));
+
+  Widget _colorRow(String label, Color c1, Color? c2,
+      Function(Color) onC1, Function(Color)? onC2) =>
+      Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(children: [
+            Text(label, style: const TextStyle(fontSize: 13)),
+            const Spacer(),
+            _colorDot(c1, onC1),
+            if (c2 != null && onC2 != null) ...[
+              const SizedBox(width: 10),
+              _colorDot(c2, onC2),
+            ],
+          ]));
+
+  Widget _colorDot(Color cur, Function(Color) onTap) => GestureDetector(
+      onTap: () => _palette(onTap),
+      child: Container(width: 38, height: 38,
+          decoration: BoxDecoration(color: cur, shape: BoxShape.circle,
+              border: Border.all(color: Colors.grey.shade300, width: 1.5),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 4)]),
+          child: Icon(Icons.colorize, size: 15,
+              color: cur.computeLuminance() > 0.5 ? Colors.black : Colors.white)));
+
+  void _palette(Function(Color) onSel) => showDialog(context: context,
+      builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text("Elige un color",
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          content: Wrap(spacing: 10, runSpacing: 10,
+              children: [
+                Colors.black, Colors.white, const Color(0xFF1565C0),
+                Colors.red, Colors.green.shade700, Colors.orange,
+                Colors.purple, Colors.teal, const Color(0xFFE91E63),
+                const Color(0xFF00BCD4), Colors.brown, Colors.grey.shade700,
+              ].map((c) => GestureDetector(
+                  onTap: () { onSel(c); Navigator.pop(ctx); },
+                  child: Container(width: 42, height: 42,
+                      decoration: BoxDecoration(color: c, shape: BoxShape.circle,
+                          border: Border.all(color: Colors.grey.shade300))))).toList())));
+
+  Widget _actionButtons(bool isEmpty) => Row(children: [
+    Expanded(child: ElevatedButton.icon(
+        onPressed: isEmpty ? null : _exportar,
+        icon: const Icon(Icons.save_alt),
+        label: const Text("GUARDAR"),
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 54),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
+    const SizedBox(width: 12),
+    Expanded(child: ElevatedButton.icon(
+        onPressed: isEmpty ? null : _compartir,
+        icon: const Icon(Icons.share),
+        label: const Text("COMPARTIR"),
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 54),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
+  ]);
+
+  LinearGradient _getGrad(Color c1, Color c2, String dir) {
+    var b = Alignment.topCenter, e = Alignment.bottomCenter;
+    if (dir == "Horizontal") { b = Alignment.centerLeft;  e = Alignment.centerRight; }
+    if (dir == "Diagonal")   { b = Alignment.topLeft;     e = Alignment.bottomRight; }
+    return LinearGradient(colors: [c1, c2], begin: b, end: e);
+  }
+
+  Future<void> _exportar() async {
+    final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final image    = await boundary.toImage(pixelRatio: 4.0);
+    final data     = await image.toByteData(format: ui.ImageByteFormat.png);
+    await ImageGallerySaver.saveImage(data!.buffer.asUint8List());
+    if (mounted) ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("✅ QR guardado en galería")));
+  }
+
+  Future<void> _compartir() async {
+    final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final image    = await boundary.toImage(pixelRatio: 4.0);
+    final data     = await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes    = data!.buffer.asUint8List();
+    final dir  = await getTemporaryDirectory();
+    final file = await File('${dir.path}/qr_generado.png').create();
+    await file.writeAsBytes(bytes);
+    await Share.shareXFiles([XFile(file.path)], text: 'Generado con QR + Logo PRO');
+  }
 }
 
 enum EyeStyle { rect, circ, diamond }
 
-// ── HELPER: genera QrImage de forma segura con versión automática ──
-// FIX PRINCIPAL: reemplaza QrCode(4, ...) por QrCode.fromData(...)
-// para soportar contenidos de cualquier longitud (versiones 1-40).
-// El freno de seguridad calcula el logoSize máximo seguro
-// basado en los módulos REALES del QR generado, no en versión fija.
-QrImage? _buildQrImage(String data) {
-  try {
-    final qrCode = QrCode.fromData(
-      data: data,
-      errorCorrectLevel: QrErrorCorrectLevel.H,
-    );
-    return QrImage(qrCode);
-  } catch (_) {
-    return null; // Datos demasiado largos incluso para versión 40
+// ═══════════════════════════════════════════════════════════════════
+// PAINTER MINIATURA — selector visual de estilos
+// Genera un QR real en pequeño con cada estilo, dejando espacio
+// central para el logo / placeholder "TU LOGO"
+// ═══════════════════════════════════════════════════════════════════
+class StylePreviewPainter extends CustomPainter {
+  final String style;
+  final Color c1, c2;
+  static const _demo = "https://qr.demo";
+
+  const StylePreviewPainter({required this.style, required this.c1, required this.c2});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final qr = _buildQrImage(_demo);
+    if (qr == null) return;
+    final int m = qr.moduleCount;
+    final double t = size.width / m;
+
+    final paint = Paint()..isAntiAlias = true..color = c1;
+    ui.Shader? grad;
+    if (c1 != c2) {
+      grad = ui.Gradient.linear(Offset.zero, Offset(size.width, size.height), [c1, c2]);
+      paint.shader = grad;
+    }
+
+    // Excluir área central para el logo
+    const frac = 0.30;
+    const s0   = (1.0 - frac) / 2.0;
+    const s1   = s0 + frac;
+    bool inCenter(int r, int c) {
+      final nx = (c+0.5)/m, ny = (r+0.5)/m;
+      return nx>=s0 && nx<=s1 && ny>=s0 && ny<=s1;
+    }
+
+    bool isEye(int r, int c) =>
+        (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
+
+    final lPath = Path();
+    final lPaint = Paint()..isAntiAlias=true..style=PaintingStyle.stroke
+        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+    if (grad!=null) lPaint.shader=grad; else lPaint.color=c1;
+
+    bool ok(int r, int c) {
+      if (r<0||r>=m||c<0||c>=m) return false;
+      if (!qr.isDark(r,c)) return false;
+      if (isEye(r,c)) return false;
+      if (inCenter(r,c)) return false;
+      return true;
+    }
+
+    for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
+      if (!ok(r,c)) continue;
+      final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
+
+      if (style.contains("Gusano")) {
+        lPath.moveTo(cx,cy); lPath.lineTo(cx,cy);
+        if (ok(r,c+1)) { lPath.moveTo(cx,cy); lPath.lineTo(cx+t,cy); }
+        if (ok(r+1,c)) { lPath.moveTo(cx,cy); lPath.lineTo(cx,cy+t); }
+      } else if (style.contains("Barras")) {
+        if (r==0||!ok(r-1,c)) {
+          int er=r; while(er+1<m&&ok(er+1,c)) er++;
+          final p2 = Paint()..isAntiAlias=true;
+          if (grad!=null) p2.shader=grad; else p2.color=c1;
+          canvas.drawRRect(RRect.fromRectAndRadius(
+              Rect.fromLTWH(x+t*0.1,y,t*0.8,(er-r+1)*t), Radius.circular(t*0.38)), p2);
+        }
+      } else if (style.contains("Puntos")) {
+        double h=((r*13+c*29)%100)/100.0;
+        canvas.drawCircle(Offset(cx,cy), t*0.35+t*0.13*h, paint);
+      } else if (style.contains("Rombos")||style.contains("Diamant")) {
+        double h=((r*17+c*31)%100)/100.0; double sc=0.65+0.45*h; double off=t*(1-sc)/2;
+        canvas.drawPath(Path()..moveTo(cx,y+off)..lineTo(x+t-off,cy)
+            ..lineTo(cx,y+t-off)..lineTo(x+off,cy)..close(), paint);
+      } else if (style=="QR Circular") {
+        final d=math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2));
+        if (d>m/2.1) continue;
+        lPath.moveTo(cx,cy); lPath.lineTo(cx,cy);
+        if (ok(r,c+1)&&math.sqrt(math.pow(c+1-m/2,2)+math.pow(r-m/2,2))<=m/2.1) {
+          lPath.moveTo(cx,cy); lPath.lineTo(cx+t,cy);
+        }
+        if (ok(r+1,c)&&math.sqrt(math.pow(c-m/2,2)+math.pow(r+1-m/2,2))<=m/2.1) {
+          lPath.moveTo(cx,cy); lPath.lineTo(cx,cy+t);
+        }
+      } else if (style.contains("Split")) {
+        final sp = c < m/2
+            ? (Paint()..isAntiAlias=true..color=c1..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round)
+            : (Paint()..isAntiAlias=true..color=c2..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round);
+        final pp = Path()..moveTo(cx,cy)..lineTo(cx,cy);
+        if (ok(r,c+1)) pp.lineTo(cx+t,cy);
+        canvas.drawPath(pp, sp);
+        if (ok(r+1,c)) canvas.drawPath(Path()..moveTo(cx,cy)..lineTo(cx,cy+t), sp);
+      } else {
+        // Normal + Mapa
+        canvas.drawRect(Rect.fromLTWH(x,y,t+0.3,t+0.3), paint);
+      }
+    }
+
+    if (style.contains("Gusano")||style=="QR Circular") {
+      canvas.drawPath(lPath, lPaint);
+    }
+
+    // Ojos siempre iguales en preview
+    final pE = Paint()..isAntiAlias=true;
+    final pI = Paint()..isAntiAlias=true;
+    if (grad!=null) { pE.shader=grad; pI.shader=grad; } else { pE.color=c1; pI.color=c1; }
+    void eye(double x, double y) {
+      final s=7*t;
+      canvas.drawPath(Path()
+          ..addRect(Rect.fromLTWH(x,y,s,s))
+          ..addRect(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
+          ..fillType=PathFillType.evenOdd, pE);
+      canvas.drawRect(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.4*t), pI);
+    }
+    eye(0,0); eye((m-7)*t,0); eye(0,(m-7)*t);
   }
+
+  @override
+  bool shouldRepaint(StylePreviewPainter o) =>
+      o.c1!=c1 || o.c2!=c2 || o.style!=style;
 }
 
-// Calcula el logoSize máximo seguro dado el moduleCount real del QR.
-// Nivel H soporta hasta ~30% de módulos dañados.
-// Usamos 28% como margen de seguridad.
-// logoFrac² ≤ 0.28 → logoFrac ≤ √0.28 ≈ 0.529
-// logoMaxPx = logoFrac * canvasSize = 0.529 * 270 ≈ 143px
-// Pero con aura, cada módulo de aura suma un borde extra.
-// Fórmula: (logoSize/270 + 2*aura/modules)² ≤ 0.28
-double _safeLogoMax(int modules, double auraSize, {double canvasSize = 270.0}) {
-  // fracción que ocupa el aura en cada lado
-  final double auraFrac = (auraSize * 2) / modules;
-  // logoFrac máximo: √0.28 - auraFrac (ambos lados)
-  final double maxFrac = (math.sqrt(0.28) - auraFrac).clamp(0.1, 0.529);
-  return (maxFrac * canvasSize).clamp(30.0, 75.0);
-}
-
-// ── CÓDIGO PRO BÁSICO ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// QR MASTER PAINTER — estilos básicos
+// ═══════════════════════════════════════════════════════════════════
 class QrMasterPainter extends CustomPainter {
   final String data, estilo, qrMode, qrDir;
-  final img_lib.Image? logoImage; final List<List<bool>>? outerMask;
+  final img_lib.Image? logoImage;
+  final List<List<bool>>? outerMask;
   final double logoSize, auraSize;
-  final bool customEyes; final Color qrC1, qrC2, eyeExt, eyeInt;
+  final bool customEyes;
+  final Color qrC1, qrC2, eyeExt, eyeInt;
 
-  QrMasterPainter({required this.data, required this.estilo, required this.logoImage, required this.outerMask, required this.logoSize, required this.auraSize, required this.qrC1, required this.qrC2, required this.qrMode, required this.qrDir, required this.customEyes, required this.eyeExt, required this.eyeInt});
+  const QrMasterPainter({
+    required this.data, required this.estilo,
+    required this.logoImage, required this.outerMask,
+    required this.logoSize, required this.auraSize,
+    required this.qrC1, required this.qrC2,
+    required this.qrMode, required this.qrDir,
+    required this.customEyes, required this.eyeExt, required this.eyeInt,
+  });
 
-  bool _isEyeModule(int r, int c, int modules) => (r < 7 && c < 7) || (r < 7 && c >= modules - 7) || (r >= modules - 7 && c < 7);
+  bool _isEye(int r, int c, int m) =>
+      (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
 
   @override
   void paint(Canvas canvas, Size size) {
-    // FIX: versión automática + try/catch
-    final qrImage = _buildQrImage(data);
-    if (qrImage == null) {
-      // Datos demasiado largos: mostrar mensaje en canvas
-      final p = Paint()..color = Colors.red.withOpacity(0.3);
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), p);
-      final tp = (TextPainter(
-        text: const TextSpan(text: 'Contenido\ndemasiado\nlargo', style: TextStyle(color: Colors.red, fontSize: 18, fontWeight: FontWeight.bold)),
-        textDirection: TextDirection.ltr, textAlign: TextAlign.center,
-      )..layout(maxWidth: size.width));
-      tp.paint(canvas, Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
-      return;
-    }
+    final qr = _buildQrImage(data);
+    if (qr == null) { _err(canvas, size); return; }
+    final int m = qr.moduleCount;
+    final double t = size.width / m;
 
-    final int modules = qrImage.moduleCount;
-    final double tileSize = size.width / modules;
+    // FRENO MATEMÁTICO dentro del painter — segunda línea de defensa
+    final double effLogo = logoSize.clamp(
+        30.0, _safeLogoMax(modules: m, auraModules: auraSize));
 
-    // FIX: freno dinámico — logoSize efectivo basado en módulos reales
-    final double effectiveLogo = logoSize.clamp(30.0, _safeLogoMax(modules, auraSize));
-
-    final paint = Paint()..isAntiAlias = true;
-    ui.Shader? gradShader;
+    final paint = Paint()..isAntiAlias=true;
+    ui.Shader? grad;
     if (qrMode != "Sólido (Un Color)") {
-      Alignment beg = Alignment.topCenter; Alignment end = Alignment.bottomCenter;
-      if (qrDir == "Horizontal") { beg = Alignment.centerLeft; end = Alignment.centerRight; }
-      if (qrDir == "Diagonal") { beg = Alignment.topLeft; end = Alignment.bottomRight; }
-      gradShader = ui.Gradient.linear(Offset(size.width * (beg.x + 1) / 2, size.height * (beg.y + 1) / 2), Offset(size.width * (end.x + 1) / 2, size.height * (end.y + 1) / 2), [qrC1, qrC2]);
-      paint.shader = gradShader;
+      var b=Alignment.topCenter, e=Alignment.bottomCenter;
+      if (qrDir=="Horizontal") { b=Alignment.centerLeft;  e=Alignment.centerRight; }
+      if (qrDir=="Diagonal")   { b=Alignment.topLeft;     e=Alignment.bottomRight; }
+      grad = ui.Gradient.linear(
+          Offset(size.width*(b.x+1)/2, size.height*(b.y+1)/2),
+          Offset(size.width*(e.x+1)/2, size.height*(e.y+1)/2),
+          [qrC1, qrC2]);
+      paint.shader = grad;
     } else { paint.color = qrC1; }
 
-    List<List<bool>> exclusionMask = List.generate(modules, (_) => List.filled(modules, false));
+    // Exclusion mask
+    final excl = List.generate(m, (_) => List.filled(m, false));
     if (logoImage != null && outerMask != null) {
-      final double canvasSize = 270.0; final double logoFrac = effectiveLogo / canvasSize;
-      final double logoStart = (1.0 - logoFrac) / 2.0; final double logoEnd = logoStart + logoFrac;
-      List<List<bool>> baseLogoModules = List.generate(modules, (_) => List.filled(modules, false));
-      for (int r = 0; r < modules; r++) {
-        for (int c = 0; c < modules; c++) {
-          bool hit = false;
-          for (double dy = 0.2; dy <= 0.8; dy += 0.3) {
-            for (double dx = 0.2; dx <= 0.8; dx += 0.3) {
-              double nx = (c + dx) / modules; double ny = (r + dy) / modules;
-              if (nx >= logoStart && nx <= logoEnd && ny >= logoStart && ny <= logoEnd) {
-                double relX = (nx - logoStart) / logoFrac; double relY = (ny - logoStart) / logoFrac;
-                int px = (relX * logoImage!.width).clamp(0, logoImage!.width - 1).toInt(); int py = (relY * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
-                if (outerMask![py][px]) { hit = true; break; }
-              }
-            } if (hit) break;
-          } if (hit) baseLogoModules[r][c] = true;
-        }
-      }
-      int auraRadius = auraSize.toInt();
-      for (int r = 0; r < modules; r++) {
-        for (int c = 0; c < modules; c++) {
-          if (baseLogoModules[r][c]) {
-            for (int dr = -auraRadius; dr <= auraRadius; dr++) {
-              for (int dc = -auraRadius; dc <= auraRadius; dc++) {
-                int nr = r + dr; int nc = c + dc;
-                if (nr >= 0 && nr < modules && nc >= 0 && nc < modules) exclusionMask[nr][nc] = true;
-              }
+      final lf=effLogo/270.0, ls=(1-lf)/2.0, le=ls+lf;
+      final base = List.generate(m, (_) => List.filled(m, false));
+      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+        bool hit=false;
+        for (double dy=0.2;dy<=0.8&&!hit;dy+=0.3)
+          for (double dx=0.2;dx<=0.8&&!hit;dx+=0.3) {
+            final nx=(c+dx)/m, ny=(r+dy)/m;
+            if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
+              final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
+              final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
+              if (outerMask![py][px]) hit=true;
             }
           }
-        }
+        if (hit) base[r][c]=true;
       }
+      final ar=auraSize.toInt();
+      for (int r=0;r<m;r++) for (int c=0;c<m;c++)
+        if (base[r][c]) for (int dr=-ar;dr<=ar;dr++) for (int dc=-ar;dc<=ar;dc++) {
+          final nr=r+dr, nc=c+dc;
+          if (nr>=0&&nr<m&&nc>=0&&nc<m) excl[nr][nc]=true;
+        }
     }
 
-    bool isSafeDark(int r, int c) {
-      if (r < 0 || r >= modules || c < 0 || c >= modules) return false;
-      if (!qrImage.isDark(r, c)) return false;
-      if (_isEyeModule(r, c, modules) && estilo != "Normal (Cuadrado)") return false;
-      if (exclusionMask[r][c]) return false;
+    bool ok(int r, int c) {
+      if (r<0||r>=m||c<0||c>=m) return false;
+      if (!qr.isDark(r,c)) return false;
+      if (_isEye(r,c,m) && estilo!="Normal (Cuadrado)") return false;
+      if (excl[r][c]) return false;
       return true;
     }
 
-    final Path liquidPath = Path(); final Path barrasPath = Path();
-    final Paint liquidPaint = Paint()..isAntiAlias = true..style = PaintingStyle.stroke..strokeWidth = tileSize..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-    if (gradShader != null) liquidPaint.shader = gradShader; else liquidPaint.color = qrC1;
+    final lPath  = Path();
+    final lPaint = Paint()..isAntiAlias=true..style=PaintingStyle.stroke
+        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+    if (grad!=null) lPaint.shader=grad; else lPaint.color=qrC1;
 
-    for (int r = 0; r < modules; r++) {
-      for (int c = 0; c < modules; c++) {
-        if (!isSafeDark(r, c)) continue;
-        final double x = c * tileSize; final double y = r * tileSize;
-        final double centerX = x + tileSize / 2; final double centerY = y + tileSize / 2;
+    for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+      if (!ok(r,c)) continue;
+      final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
 
-        if (estilo.contains("Gusano")) {
-          liquidPath.moveTo(centerX, centerY); liquidPath.lineTo(centerX, centerY);
-          if (isSafeDark(r, c + 1)) { liquidPath.moveTo(centerX, centerY); liquidPath.lineTo(centerX + tileSize, centerY); }
-          if (isSafeDark(r + 1, c)) { liquidPath.moveTo(centerX, centerY); liquidPath.lineTo(centerX, centerY + tileSize); }
-        } else if (estilo.contains("Barras")) {
-          if (r == 0 || !isSafeDark(r - 1, c)) {
-            int endR = r; while (endR + 1 < modules && isSafeDark(endR + 1, c)) endR++;
-            final double barHeight = (endR - r + 1) * tileSize;
-            barrasPath.addRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x + tileSize * 0.1, y, tileSize * 0.8, barHeight), Radius.circular(tileSize * 0.3)));
-          }
-        } else if (estilo.contains("Puntos")) {
-          double hash = ((r * 13 + c * 29) % 100) / 100.0;
-          canvas.drawCircle(Offset(centerX, centerY), tileSize * 0.35 + (tileSize * 0.15 * hash), paint);
-        } else if (estilo.contains("Diamantes")) {
-          double hash = ((r * 17 + c * 31) % 100) / 100.0; double scale = 0.65 + (0.5 * hash); double offset = tileSize * (1.0 - scale) / 2;
-          canvas.drawPath(Path()..moveTo(centerX, y + offset)..lineTo(x + tileSize - offset, centerY)..lineTo(centerX, y + tileSize - offset)..lineTo(x + offset, centerY)..close(), paint);
-        } else canvas.drawRect(Rect.fromLTWH(x, y, tileSize + 0.3, tileSize + 0.3), paint);
+      if (estilo.contains("Gusano")) {
+        lPath.moveTo(cx,cy); lPath.lineTo(cx,cy);
+        if (ok(r,c+1)) { lPath.moveTo(cx,cy); lPath.lineTo(cx+t,cy); }
+        if (ok(r+1,c)) { lPath.moveTo(cx,cy); lPath.lineTo(cx,cy+t); }
+      } else if (estilo.contains("Barras")) {
+        if (r==0||!ok(r-1,c)) {
+          int er=r; while(er+1<m&&ok(er+1,c)) er++;
+          final p2=Paint()..isAntiAlias=true;
+          if (grad!=null) p2.shader=grad; else p2.color=qrC1;
+          canvas.drawRRect(RRect.fromRectAndRadius(
+              Rect.fromLTWH(x+t*0.1,y,t*0.8,(er-r+1)*t),
+              Radius.circular(t*0.38)), p2);
+        }
+      } else if (estilo.contains("Puntos")) {
+        double h=((r*13+c*29)%100)/100.0;
+        canvas.drawCircle(Offset(cx,cy), t*0.35+t*0.15*h, paint);
+      } else if (estilo.contains("Diamantes")) {
+        double h=((r*17+c*31)%100)/100.0;
+        double sc=0.65+0.5*h, off=t*(1-sc)/2;
+        canvas.drawPath(Path()
+            ..moveTo(cx,y+off)..lineTo(x+t-off,cy)
+            ..lineTo(cx,y+t-off)..lineTo(x+off,cy)..close(), paint);
+      } else {
+        canvas.drawRect(Rect.fromLTWH(x,y,t+0.3,t+0.3), paint);
       }
     }
-    if (estilo.contains("Gusano")) canvas.drawPath(liquidPath, liquidPaint);
-    else if (estilo.contains("Barras")) canvas.drawPath(barrasPath, paint);
+    if (estilo.contains("Gusano")) canvas.drawPath(lPath, lPaint);
 
-    final pE = Paint()..isAntiAlias = true; final pI = Paint()..isAntiAlias = true;
-    if (customEyes) { pE.color = eyeExt; pI.color = eyeInt; } else if (gradShader != null) { pE.shader = gradShader; pI.shader = gradShader; } else { pE.color = qrC1; pI.color = qrC1; }
-    EyeStyle eStyle = EyeStyle.rect; if (estilo.contains("Puntos")) eStyle = EyeStyle.circ; if (estilo.contains("Diamantes")) eStyle = EyeStyle.diamond;
-    _drawEye(canvas, 0, 0, tileSize, pE, pI, eStyle); _drawEye(canvas, (modules - 7) * tileSize, 0, tileSize, pE, pI, eStyle); _drawEye(canvas, 0, (modules - 7) * tileSize, tileSize, pE, pI, eStyle);
+    // Ojos
+    final pE=Paint()..isAntiAlias=true;
+    final pI=Paint()..isAntiAlias=true;
+    if (customEyes) { pE.color=eyeExt; pI.color=eyeInt; }
+    else if (grad!=null) { pE.shader=grad; pI.shader=grad; }
+    else { pE.color=qrC1; pI.color=qrC1; }
+    EyeStyle es = EyeStyle.rect;
+    if (estilo.contains("Puntos"))    es=EyeStyle.circ;
+    if (estilo.contains("Diamantes")) es=EyeStyle.diamond;
+    _eye(canvas,0,0,t,pE,pI,es);
+    _eye(canvas,(m-7)*t,0,t,pE,pI,es);
+    _eye(canvas,0,(m-7)*t,t,pE,pI,es);
   }
 
-  void _drawEye(Canvas canvas, double x, double y, double t, Paint pE, Paint pI, EyeStyle eStyle) {
-    final double s = 7 * t;
-    if (eStyle == EyeStyle.circ) { canvas.drawPath(Path()..addOval(Rect.fromLTWH(x, y, s, s))..addOval(Rect.fromLTWH(x + t, y + t, s - 2 * t, s - 2 * t))..fillType = PathFillType.evenOdd, pE); canvas.drawOval(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.2 * t), pI);
-    } else if (eStyle == EyeStyle.diamond) { double cx = x + 3.5 * t; double cy = y + 3.5 * t; canvas.drawPath(Path()..moveTo(cx, y)..lineTo(x + 7*t, cy)..lineTo(cx, y + 7*t)..lineTo(x, cy)..moveTo(cx, y + 1.2*t)..lineTo(x + 5.8*t, cy)..lineTo(cx, y + 5.8*t)..lineTo(x + 1.2*t, cy)..fillType = PathFillType.evenOdd, pE); canvas.drawPath(Path()..moveTo(cx, y + 2.2*t)..lineTo(x + 4.8*t, cy)..lineTo(cx, y + 4.8*t)..lineTo(x + 2.2*t, cy)..close(), pI);
-    } else { canvas.drawPath(Path()..addRect(Rect.fromLTWH(x, y, s, s))..addRect(Rect.fromLTWH(x + t, y + t, s - 2 * t, s - 2 * t))..fillType = PathFillType.evenOdd, pE); canvas.drawRect(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.4 * t), pI); }
+  void _eye(Canvas c, double x, double y, double t,
+      Paint pE, Paint pI, EyeStyle es) {
+    final s=7*t;
+    if (es==EyeStyle.circ) {
+      c.drawPath(Path()
+          ..addOval(Rect.fromLTWH(x,y,s,s))
+          ..addOval(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
+          ..fillType=PathFillType.evenOdd, pE);
+      c.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
+    } else if (es==EyeStyle.diamond) {
+      double cx=x+3.5*t, cy=y+3.5*t;
+      c.drawPath(Path()
+          ..moveTo(cx,y)..lineTo(x+7*t,cy)..lineTo(cx,y+7*t)..lineTo(x,cy)
+          ..moveTo(cx,y+1.2*t)..lineTo(x+5.8*t,cy)..lineTo(cx,y+5.8*t)..lineTo(x+1.2*t,cy)
+          ..fillType=PathFillType.evenOdd, pE);
+      c.drawPath(Path()
+          ..moveTo(cx,y+2.2*t)..lineTo(x+4.8*t,cy)
+          ..lineTo(cx,y+4.8*t)..lineTo(x+2.2*t,cy)..close(), pI);
+    } else {
+      c.drawPath(Path()
+          ..addRect(Rect.fromLTWH(x,y,s,s))
+          ..addRect(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
+          ..fillType=PathFillType.evenOdd, pE);
+      c.drawRect(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.4*t), pI);
+    }
   }
-  @override bool shouldRepaint(CustomPainter old) => true;
+
+  void _err(Canvas canvas, Size size) {
+    canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height),
+        Paint()..color=Colors.red.withOpacity(0.08));
+    final tp = TextPainter(
+        text: const TextSpan(text: 'Contenido\ndemasiado largo',
+            style: TextStyle(color: Colors.red, fontSize: 15,
+                fontWeight: FontWeight.bold)),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center)
+      ..layout(maxWidth: size.width);
+    tp.paint(canvas, Offset((size.width-tp.width)/2, (size.height-tp.height)/2));
+  }
+
+  @override bool shouldRepaint(CustomPainter o) => true;
 }
 
-// ── MOTOR AVANZADO ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// QR ADVANCED PAINTER — estilos avanzados
+// ═══════════════════════════════════════════════════════════════════
 class QrAdvancedPainter extends CustomPainter {
-  final String data, estiloAvanzado;
-  final img_lib.Image? logoImage; final List<List<bool>>? outerMask;
+  final String data, estiloAvanzado, qrMode, qrDir;
+  final img_lib.Image? logoImage;
+  final List<List<bool>>? outerMask;
   final double logoSize, auraSize;
-  final bool customEyes; final Color qrC1, qrC2, eyeExt, eyeInt;
+  final bool customEyes;
+  final Color qrC1, qrC2, eyeExt, eyeInt;
 
-  QrAdvancedPainter({required this.data, required this.estiloAvanzado, required this.logoImage, required this.outerMask, required this.logoSize, required this.auraSize, required this.qrC1, required this.qrC2, required this.customEyes, required this.eyeExt, required this.eyeInt});
+  const QrAdvancedPainter({
+    required this.data, required this.estiloAvanzado,
+    required this.logoImage, required this.outerMask,
+    required this.logoSize, required this.auraSize,
+    required this.qrC1, required this.qrC2,
+    required this.qrMode, required this.qrDir,
+    required this.customEyes, required this.eyeExt, required this.eyeInt,
+  });
 
-  bool _isEyeModule(int r, int c, int modules) => (r < 7 && c < 7) || (r < 7 && c >= modules - 7) || (r >= modules - 7 && c < 7);
+  bool _isEye(int r, int c, int m) =>
+      (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
 
   @override
   void paint(Canvas canvas, Size size) {
-    // FIX: versión automática + try/catch
-    final qrImage = _buildQrImage(data);
-    if (qrImage == null) {
-      final p = Paint()..color = Colors.red.withOpacity(0.3);
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), p);
-      final tp = (TextPainter(
-        text: const TextSpan(text: 'Contenido\ndemasiado\nlargo', style: TextStyle(color: Colors.red, fontSize: 18, fontWeight: FontWeight.bold)),
-        textDirection: TextDirection.ltr, textAlign: TextAlign.center,
-      )..layout(maxWidth: size.width));
-      tp.paint(canvas, Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
-      return;
+    final qr = _buildQrImage(data);
+    if (qr == null) return;
+    final int m = qr.moduleCount;
+    final double t = size.width / m;
+    final bool isMap = estiloAvanzado == "Forma de Mapa (Máscara)";
+
+    // FRENO MATEMÁTICO
+    final double effLogo = isMap
+        ? logoSize
+        : logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
+
+    // Degradado
+    ui.Shader? grad;
+    if (qrMode == "Degradado Custom") {
+      var b=Alignment.topCenter, e=Alignment.bottomCenter;
+      if (qrDir=="Horizontal") { b=Alignment.centerLeft;  e=Alignment.centerRight; }
+      if (qrDir=="Diagonal")   { b=Alignment.topLeft;     e=Alignment.bottomRight; }
+      grad = ui.Gradient.linear(
+          Offset(size.width*(b.x+1)/2, size.height*(b.y+1)/2),
+          Offset(size.width*(e.x+1)/2, size.height*(e.y+1)/2),
+          [qrC1, qrC2]);
     }
 
-    final int modules = qrImage.moduleCount;
-    final double tileSize = size.width / modules;
+    final pen1 = Paint()..isAntiAlias=true..style=PaintingStyle.stroke
+        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+    if (grad!=null) pen1.shader=grad; else pen1.color=qrC1;
+    final pen2 = Paint()..isAntiAlias=true..color=qrC2..style=PaintingStyle.stroke
+        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
 
-    // FIX: freno dinámico para estilos que tienen logo encima
-    final bool isFusionOrMap = estiloAvanzado == "Forma de Mapa (Máscara)" || estiloAvanzado == "Logo Fusión (Camuflaje)";
-    final double effectiveLogo = isFusionOrMap
-        ? logoSize // Mapa y Fusión no tienen logo encima, no aplica freno
-        : logoSize.clamp(30.0, _safeLogoMax(modules, auraSize));
-
-    final Paint basePaint = Paint()..isAntiAlias = true..color = qrC1;
-    final Path liquidPathC1 = Path(); final Path liquidPathC2 = Path();
-    
-    List<List<bool>> logoMaskMap = List.generate(modules, (_) => List.filled(modules, false));
-    List<List<Color?>> logoColorMap = List.generate(modules, (_) => List.filled(modules, null));
-    List<List<bool>> exclusionMask = List.generate(modules, (_) => List.filled(modules, false));
+    final logoMask = List.generate(m, (_) => List.filled(m, false));
+    final excl     = List.generate(m, (_) => List.filled(m, false));
 
     if (logoImage != null && outerMask != null) {
-      final double logoFrac = effectiveLogo / 270.0;
-      final double logoStart = (1.0 - logoFrac) / 2.0;
-      final double logoEnd = logoStart + logoFrac;
-      
-      for (int r = 0; r < modules; r++) {
-        for (int c = 0; c < modules; c++) {
-          double nx = (c + 0.5) / modules; double ny = (r + 0.5) / modules;
-          if (nx >= logoStart && nx <= logoEnd && ny >= logoStart && ny <= logoEnd) {
-            double relX = (nx - logoStart) / logoFrac; double relY = (ny - logoStart) / logoFrac;
-            int px = (relX * logoImage!.width).clamp(0, logoImage!.width - 1).toInt(); 
-            int py = (relY * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
-            if (outerMask![py][px]) {
-              logoMaskMap[r][c] = true;
-              final pixel = logoImage!.getPixel(px, py);
-              if (pixel.a > 30) {
-                logoColorMap[r][c] = Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt());
-              }
-            }
-          }
+      final lf=effLogo/270.0, ls=(1-lf)/2.0, le=ls+lf;
+      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+        final nx=(c+0.5)/m, ny=(r+0.5)/m;
+        if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
+          final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
+          final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
+          if (outerMask![py][px]) logoMask[r][c]=true;
         }
       }
-
-      if (!isFusionOrMap) {
-        List<List<bool>> baseLogoModules = List.generate(modules, (_) => List.filled(modules, false));
-        for (int r = 0; r < modules; r++) {
-          for (int c = 0; c < modules; c++) {
-            bool hit = false;
-            for (double dy = 0.2; dy <= 0.8; dy += 0.3) {
-              for (double dx = 0.2; dx <= 0.8; dx += 0.3) {
-                double nx = (c + dx) / modules; double ny = (r + dy) / modules;
-                if (nx >= logoStart && nx <= logoEnd && ny >= logoStart && ny <= logoEnd) {
-                  double relX = (nx - logoStart) / logoFrac; double relY = (ny - logoStart) / logoFrac;
-                  int px = (relX * logoImage!.width).clamp(0, logoImage!.width - 1).toInt(); int py = (relY * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
-                  if (outerMask![py][px]) { hit = true; break; }
-                }
-              } if (hit) break;
-            } if (hit) baseLogoModules[r][c] = true;
-          }
-        }
-        int auraRadius = auraSize.toInt();
-        for (int r = 0; r < modules; r++) {
-          for (int c = 0; c < modules; c++) {
-            if (baseLogoModules[r][c]) {
-              for (int dr = -auraRadius; dr <= auraRadius; dr++) {
-                for (int dc = -auraRadius; dc <= auraRadius; dc++) {
-                  int nr = r + dr; int nc = c + dc;
-                  if (nr >= 0 && nr < modules && nc >= 0 && nc < modules) exclusionMask[nr][nc] = true;
-                }
+      if (!isMap) {
+        final base=List.generate(m,(_)=>List.filled(m,false));
+        for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+          bool hit=false;
+          for (double dy=0.2;dy<=0.8&&!hit;dy+=0.3)
+            for (double dx=0.2;dx<=0.8&&!hit;dx+=0.3) {
+              final nx=(c+dx)/m, ny=(r+dy)/m;
+              if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
+                final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
+                final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
+                if (outerMask![py][px]) hit=true;
               }
             }
-          }
+          if (hit) base[r][c]=true;
         }
+        final ar=auraSize.toInt();
+        for (int r=0;r<m;r++) for (int c=0;c<m;c++)
+          if (base[r][c]) for (int dr=-ar;dr<=ar;dr++) for (int dc=-ar;dc<=ar;dc++) {
+            final nr=r+dr, nc=c+dc;
+            if (nr>=0&&nr<m&&nc>=0&&nc<m) excl[nr][nc]=true;
+          }
       }
     }
 
-    bool shouldDrawAdvance(int r, int c) {
-      if (r < 0 || r >= modules || c < 0 || c >= modules) return false;
-      if (!qrImage.isDark(r, c)) return false;
-      if (_isEyeModule(r, c, modules)) return false; 
-      if (!isFusionOrMap && exclusionMask[r][c]) return false;
-      if (estiloAvanzado == "QR Circular") {
-        double dist = math.sqrt(math.pow(c - modules/2, 2) + math.pow(r - modules/2, 2));
-        if (dist > (modules / 2.1)) return false; 
+    bool ok(int r, int c) {
+      if (r<0||r>=m||c<0||c>=m) return false;
+      if (!qr.isDark(r,c)) return false;
+      if (_isEye(r,c,m)) return false;
+      if (!isMap && excl[r][c]) return false;
+      if (estiloAvanzado=="QR Circular") {
+        if (math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2)) > m/2.1) return false;
       }
-      if (estiloAvanzado == "Forma de Mapa (Máscara)" && logoImage != null) {
-        if (!logoMaskMap[r][c]) return false; 
-      }
+      if (isMap && logoImage!=null && !logoMask[r][c]) return false;
       return true;
     }
 
-    for (int r = 0; r < modules; r++) {
-      for (int c = 0; c < modules; c++) {
-        if (!shouldDrawAdvance(r, c)) continue;
-        
-        final double x = c * tileSize; final double y = r * tileSize;
-        final double cx = x + tileSize / 2; final double cy = y + tileSize / 2;
-
-        if (estiloAvanzado == "Split Liquid (Mitades)") {
-          Path activePath = (c < modules / 2) ? liquidPathC1 : liquidPathC2;
-          activePath.moveTo(cx, cy); activePath.lineTo(cx, cy);
-          if (shouldDrawAdvance(r, c + 1) && ((c + 1 < modules / 2) == (c < modules / 2))) {
-            activePath.moveTo(cx, cy); activePath.lineTo(cx + tileSize, cy);
-          }
-          if (shouldDrawAdvance(r + 1, c)) {
-            activePath.moveTo(cx, cy); activePath.lineTo(cx, cy + tileSize);
-          }
-        } else if (estiloAvanzado == "Logo Fusión (Camuflaje)") {
-          Color dotColor = logoColorMap[r][c] ?? qrC1;
-          Paint fusionPaint = Paint()..color = dotColor..strokeWidth = tileSize..strokeCap = StrokeCap.round..style = PaintingStyle.stroke;
-          Path p = Path()..moveTo(cx, cy)..lineTo(cx, cy);
-          if (shouldDrawAdvance(r, c + 1)) p.lineTo(cx + tileSize, cy);
-          canvas.drawPath(p, fusionPaint);
-          if (shouldDrawAdvance(r + 1, c)) canvas.drawPath(Path()..moveTo(cx, cy)..lineTo(cx, cy + tileSize), fusionPaint);
-        } else {
-          liquidPathC1.moveTo(cx, cy); liquidPathC1.lineTo(cx, cy);
-          if (shouldDrawAdvance(r, c + 1)) { liquidPathC1.moveTo(cx, cy); liquidPathC1.lineTo(cx + tileSize, cy); }
-          if (shouldDrawAdvance(r + 1, c)) { liquidPathC1.moveTo(cx, cy); liquidPathC1.lineTo(cx, cy + tileSize); }
-        }
+    final pathC1=Path(), pathC2=Path();
+    for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+      if (!ok(r,c)) continue;
+      final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
+      if (estiloAvanzado=="Split Liquid (Mitades)") {
+        final left=c<m/2;
+        final ap=left?pathC1:pathC2;
+        ap.moveTo(cx,cy); ap.lineTo(cx,cy);
+        if (ok(r,c+1)&&((c+1<m/2)==left)) { ap.moveTo(cx,cy); ap.lineTo(cx+t,cy); }
+        if (ok(r+1,c)) { ap.moveTo(cx,cy); ap.lineTo(cx,cy+t); }
+      } else {
+        pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
+        if (ok(r,c+1)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
+        if (ok(r+1,c)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
       }
     }
-
-    final Paint pen1 = Paint()..isAntiAlias=true..color=qrC1..style=PaintingStyle.stroke..strokeWidth=tileSize..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
-    final Paint pen2 = Paint()..isAntiAlias=true..color=qrC2..style=PaintingStyle.stroke..strokeWidth=tileSize..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
-    
-    if (estiloAvanzado == "Split Liquid (Mitades)") {
-      canvas.drawPath(liquidPathC1, pen1); canvas.drawPath(liquidPathC2, pen2);
-    } else if (estiloAvanzado != "Logo Fusión (Camuflaje)") {
-      canvas.drawPath(liquidPathC1, pen1);
+    if (estiloAvanzado=="Split Liquid (Mitades)") {
+      canvas.drawPath(pathC1,pen1);
+      canvas.drawPath(pathC2,pen2);
+    } else {
+      canvas.drawPath(pathC1,pen1);
     }
 
-    final pE = Paint()..isAntiAlias = true..color = customEyes ? eyeExt : qrC1;
-    final pI = Paint()..isAntiAlias = true..color = customEyes ? eyeInt : qrC1;
-    
-    void dEye(double x, double y) {
-      final double s = 7 * tileSize; final double t = tileSize;
-      canvas.drawPath(Path()..addOval(Rect.fromLTWH(x, y, s, s))..addOval(Rect.fromLTWH(x + t, y + t, s - 2 * t, s - 2 * t))..fillType = PathFillType.evenOdd, pE);
-      canvas.drawOval(Rect.fromLTWH(x + 2.1 * t, y + 2.1 * t, s - 4.2 * t, s - 4.2 * t), pI);
+    // Ojos
+    final pE=Paint()..isAntiAlias=true;
+    final pI=Paint()..isAntiAlias=true;
+    if (customEyes) { pE.color=eyeExt; pI.color=eyeInt; }
+    else if (grad!=null) { pE.shader=grad; pI.shader=grad; }
+    else { pE.color=qrC1; pI.color=qrC1; }
+    void eye(double x, double y) {
+      final s=7*t;
+      canvas.drawPath(Path()
+          ..addOval(Rect.fromLTWH(x,y,s,s))
+          ..addOval(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
+          ..fillType=PathFillType.evenOdd, pE);
+      canvas.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
     }
-    dEye(0, 0); dEye((modules - 7) * tileSize, 0); dEye(0, (modules - 7) * tileSize);
+    eye(0,0); eye((m-7)*t,0); eye(0,(m-7)*t);
   }
-  @override bool shouldRepaint(CustomPainter old) => true;
+
+  @override bool shouldRepaint(CustomPainter o) => true;
 }
