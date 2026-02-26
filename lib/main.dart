@@ -34,15 +34,18 @@ QrImage? _buildQrImage(String data) {
 // Nivel H ≈ 30% recuperación. Margen seguro: 22%.
 // (logoFrac + 2*auraFrac)² ≤ 0.22
 // ═══════════════════════════════════════════════════════════════════
+// hardMax=55px = 20.4% del canvas — cap duro absoluto siempre.
+// Nivel H: 30% tolerancia. Margen seguro usado: 18%.
+// Formula: (logoFrac + 2*auraFrac)^2 <= 0.18
 double _safeLogoMax({
   required int modules,
   required double auraModules,
   double canvasSize = 270.0,
-  double hardMax    = 75.0,
-  double hardMin    = 30.0,
+  double hardMax    = 55.0,
+  double hardMin    = 26.0,
 }) {
   final auraFrac = (auraModules * 2.0) / modules.toDouble();
-  final maxFrac  = (math.sqrt(0.22) - auraFrac).clamp(0.08, 0.40);
+  final maxFrac  = (math.sqrt(0.18) - auraFrac).clamp(0.06, 0.28);
   return (maxFrac * canvasSize).clamp(hardMin, hardMax);
 }
 
@@ -483,7 +486,7 @@ class _MainScreenState extends State<MainScreen>
                         style:TextStyle(fontSize:11,color:Colors.deepOrange,
                             fontWeight:FontWeight.w600))),
             ]),
-            Slider(value:_logoSize, min:30, max:75, divisions:9,
+            Slider(value:_logoSize, min:26, max:55, divisions:8,
                 activeColor:Colors.black,
                 onChanged:(v)=>setState(()=>_logoSize=v)),
             Row(children: [
@@ -493,7 +496,7 @@ class _MainScreenState extends State<MainScreen>
               Text("${_auraSize.toInt()} módulo(s)",
                   style:const TextStyle(fontSize:12)),
             ]),
-            Slider(value:_auraSize, min:0, max:3, divisions:3,
+            Slider(value:_auraSize, min:0, max:2, divisions:2,
                 activeColor:Colors.black,
                 onChanged:(v)=>setState(()=>_auraSize=v)),
           ] else ...[
@@ -1130,48 +1133,64 @@ class QrAdvancedPainter extends CustomPainter {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // ok() — qué módulos van al path principal (DARK)
+    // QR CIRCULAR: ghost-dot technique
+    // El QR visualmente ES un círculo. Los módulos fuera del círculo
+    // se renderizan como ghost-dots (0xF0F0F0 = luminancia 0.88).
+    // El scanner los ve como "blanco" (umbral ~0.45). Con nivel H,
+    // ~21.5% de área de esquinas puede ser "incorrecta" (oscuro→blanco)
+    // y aún se decodifica. Resultado: círculo visual + QR escaneable.
     //
-    // QR CIRCULAR FIX: NO hay clip circular. "Circular" = solo estilo
-    // de ojos y dots. Todos los módulos de datos se dibujan completos.
-    // Esto garantiza que el QR siempre sea escaneable.
+    // FORMAS: mismo principio para módulos fuera de la silueta.
     //
-    // FORMAS FIX: Los módulos FUERA de la máscara NO van al path
-    // principal (dark), pero SÍ se dibujan como ghost-dots (gris muy
-    // claro) en un paso previo. Ghost-dots = visibles al ojo humano
-    // pero con luminancia ~0.93 → blancos para el scanner → el QR
-    // siempre tiene todos sus datos intactos.
+    // ok() = módulos que van al path OSCURO (visiblemente dark)
     // ═══════════════════════════════════════════════════════════════
+    final double circRad = (m / 2.0) - 0.5; // radio del círculo
+    final double circCx  = m / 2.0;
+    final double circCy  = m / 2.0;
+
+    bool insideCircle(int r, int c) {
+      final dr = (r + 0.5) - circCy;
+      final dc = (c + 0.5) - circCx;
+      return math.sqrt(dr*dr + dc*dc) <= circRad;
+    }
+
     bool ok(int r, int c) {
       if (r<0||r>=m||c<0||c>=m) return false;
       if (!qr.isDark(r,c)) return false;
       if (_isEye(r,c,m)) return false;      // ojos = geometrías propias
-      if (r==6||c==6) return !excl[r][c];   // timing patterns siempre
+      if (r==6||c==6) return !excl[r][c];   // timing patterns
       if (excl[r][c]) return false;          // exclusión logo
-      // Formas: solo módulos DENTRO de la máscara van al path oscuro
       if (isMap && logoImage!=null && !logoMask[r][c]) return false;
-      // QR Circular + Split + todo lo demás: dibujar todo
+      // QR Circular: módulos fuera del círculo → ghost (no al path oscuro)
+      if (isCircular && !insideCircle(r,c)) return false;
       return true;
     }
 
-    // ─── Pre-paso FORMAS: ghost-dots fuera de la máscara ────────────
-    // Luminancia 0xECECEC ≈ 0.85 → muy por encima del umbral de
-    // binarización del scanner (~0.45). El lector los ve como blanco.
-    // El ojo humano los percibe como textura sutil fuera de la forma.
-    if (isMap && logoImage != null) {
-      final ghost = Paint()
-          ..color = const Color(0xFFECECEC)
-          ..isAntiAlias = true;
+    // ─── Ghost-dots: módulos oscuros que van a aparecer como muy claros ─
+    // Para CIRCULAR: módulos fuera del círculo
+    // Para FORMAS:   módulos fuera de la silueta del logo
+    const ghostColor = Color(0xFFF0F0F0); // luminancia 0.88 → blanco para scanner
+    final ghostPaint = Paint()..color=ghostColor..isAntiAlias=true;
+
+    if (isCircular) {
       for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
         if (!qr.isDark(r,c)) continue;
         if (_isEye(r,c,m)) continue;
-        if (logoMask[r][c]) continue; // dentro = path oscuro, no ghost
-        final cx = c*t+t/2, cy = r*t+t/2;
-        canvas.drawCircle(Offset(cx, cy), t*0.38, ghost);
+        if (insideCircle(r,c)) continue;  // dentro → path oscuro normal
+        canvas.drawCircle(Offset(c*t+t/2, r*t+t/2), t*0.40, ghostPaint);
       }
     }
 
-    // ─── Dibujar módulos OSCUROS (path principal) ───────────────────
+    if (isMap && logoImage != null) {
+      for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
+        if (!qr.isDark(r,c)) continue;
+        if (_isEye(r,c,m)) continue;
+        if (logoMask[r][c]) continue; // dentro de la forma → path oscuro
+        canvas.drawCircle(Offset(c*t+t/2, r*t+t/2), t*0.38, ghostPaint);
+      }
+    }
+
+    // ─── Path oscuro principal ───────────────────────────────────────
     final pathC1=Path(), pathC2=Path();
     for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
       if (!ok(r,c)) continue;
@@ -1191,8 +1210,8 @@ class QrAdvancedPainter extends CustomPainter {
     else canvas.drawPath(pathC1,pen1);
 
     // ─── Ojos: siempre como geometrías propias ───────────────────────
-    // QR Circular → ojos circulares para integración visual
-    // Formas / Split → ojos rectangulares para máxima legibilidad
+    // QR Circular → ojos circulares integrados
+    // Formas / Split → ojos rectangulares para legibilidad
     final pE=Paint()..isAntiAlias=true;
     final pI=Paint()..isAntiAlias=true;
     if (customEyes){pE.color=eyeExt;pI.color=eyeInt;}
@@ -1236,92 +1255,84 @@ class QrFusionPainter extends CustomPainter {
     final qr=_buildQrImage(data); if (qr==null) return;
     final int m=qr.moduleCount; final double t=size.width/m;
 
-    // ── Paso 1: Fondo blanco + logo a full opacity ───────────────
+    // ═══════════════════════════════════════════════════════════════
+    // FUSIÓN — Algoritmo definitivo
+    //
+    // El efecto real que se ve en Pepsi/Starbucks/Facebook:
+    // - El FONDO es blanco. El logo NO está debajo de todo el QR.
+    // - El logo se ve a través de los HUECOS entre módulos oscuros.
+    // - Cada módulo oscuro TOMA el color del pixel del logo en esa
+    //   posición pero se fuerza a luminancia ≤ 0.15.
+    // - Los módulos CLAROS = blanco puro. No hay logo debajo de ellos.
+    //
+    // Por eso el scanner puede leer: oscuro muy oscuro, claro = blanco.
+    // El logo se percibe por el cerebro a través del halftone.
+    //
+    // Implementación correcta:
+    // 1. Fondo blanco total
+    // 2. Para cada módulo oscuro: dibujar dot con color del logo a L≤0.15
+    // 3. Los módulos claros: solo fondo blanco (ya está)
+    // 4. Ojos: color del logo oscurecido, máximo contraste
+    // ═══════════════════════════════════════════════════════════════
+
+    // Paso 1: fondo blanco absoluto
     canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height),
         Paint()..color=Colors.white);
-    if (logoUiImage!=null) {
-      final src=Rect.fromLTWH(0,0,
-          logoUiImage!.width.toDouble(),logoUiImage!.height.toDouble());
-      final dst=Rect.fromLTWH(0,0,size.width,size.height);
-      canvas.drawImageRect(logoUiImage!,src,dst,
-          Paint()..filterQuality=FilterQuality.medium);
-    }
 
-    // ── Paso 2: OVERLAY BLANCO en posiciones de módulos CLAROS ──
-    //
-    // ESTE ES EL FIX CRÍTICO DE ESCANEABILIDAD:
-    // El scanner QR binariza la imagen buscando zonas oscuras vs claras.
-    // Sin este overlay, una zona "clara" del QR puede mostrar el logo
-    // naranja/dorado y una zona "oscura" muestra un dot naranja oscuro —
-    // el contraste es insuficiente para binarizar correctamente.
-    // Con este overlay, las zonas claras → blanco puro (lum 1.0)
-    // y las zonas oscuras → dots con lum ≤ 0.18.
-    // Ratio de contraste ≥ 5.5:1 → umbral WCAG AAA para escaneado.
-    //
-    // El efecto artístico se preserva: el logo se ve a través de los
-    // huecos ENTRE dots (espacio entre módulos oscuros).
-    if (logoUiImage!=null) {
-      final whiteMask=Paint()..color=Colors.white.withOpacity(0.84);
-      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
-        if (qr.isDark(r,c)) continue;      // módulo oscuro: no cubrir
-        if (_isEye(r,c,m)) continue;       // ojo: no cubrir
-        canvas.drawRect(Rect.fromLTWH(c*t,r*t,t,t),whiteMask);
-      }
-    }
-
-    // ── Paso 3: Dots del QR coloreados ──────────────────────────
-    for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+    // Paso 2: módulos oscuros como dots coloreados del logo
+    for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
       if (!qr.isDark(r,c)) continue;
       if (_isEye(r,c,m)) continue;
 
-      // Timing patterns → siempre negro para máxima legibilidad
-      final bool isTiming = (r==6||c==6);
-
       Color dotColor = Colors.black;
-      if (!isTiming && logoImage!=null) {
-        final px=(c/m*logoImage!.width).floor().clamp(0,logoImage!.width-1);
-        final py=(r/m*logoImage!.height).floor().clamp(0,logoImage!.height-1);
-        final pixel=logoImage!.getPixel(px,py);
+
+      if (logoImage != null) {
+        // Samplear el pixel del logo en la posición normalizada
+        final px = (c / m * logoImage!.width ).floor().clamp(0, logoImage!.width-1);
+        final py = (r / m * logoImage!.height).floor().clamp(0, logoImage!.height-1);
+        final pixel = logoImage!.getPixel(px, py);
+
         if (pixel.a > 20) {
-          dotColor=Color.fromARGB(255,pixel.r.toInt(),pixel.g.toInt(),pixel.b.toInt());
+          // Tomar el hue y la saturación del logo
+          final rawColor = Color.fromARGB(
+              255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt());
+          final hsl = HSLColor.fromColor(rawColor);
+
+          // Timing patterns → siempre negro puro
+          if (r == 6 || c == 6) {
+            dotColor = Colors.black;
+          } else {
+            // FRENO DE CONTRASTE: forzar luminancia entre 0.08 y 0.15
+            // Preservar hue y saturación del logo para el efecto visual
+            // Saturación alta → puede ser un poco más clara (0.15)
+            // Saturación baja → más oscura (0.08) para que no parezca gris
+            final targetL = (0.08 + hsl.saturation * 0.07).clamp(0.08, 0.15);
+            dotColor = hsl.withLightness(targetL).toColor();
+          }
         }
       }
 
-      // ── FRENO DE CONTRASTE OBLIGATORIO ───────────────────────
-      // Todo dot debe tener luminancia ≤ 0.18 para ser distinguible
-      // contra el fondo blanco (ratio ≥ 4.6:1).
-      // Preservamos el hue y la saturación del logo, solo forzamos
-      // el valor de luminosidad.
-      final hsl=HSLColor.fromColor(dotColor);
-      // Luminancia target: 0.12 base + hasta 0.08 según saturación
-      // (colores saturados pueden ser ligeramente más claros y seguir
-      // siendo distinguibles por el scanner)
-      final targetL=(0.12+hsl.saturation*0.08).clamp(0.08,0.20);
-      dotColor=hsl.withLightness(targetL).toColor();
-
-      final paint=Paint()..color=dotColor..isAntiAlias=true;
-      final double cx=c*t+t/2, cy=r*t+t/2;
-
-      // Dots ligeramente más grandes (0.47 vs 0.44) para mejor detección
-      if (shape=="Círculos") {
-        canvas.drawCircle(Offset(cx,cy),t*0.47,paint);
+      final paint = Paint()..color=dotColor..isAntiAlias=true;
+      final double cx = c*t+t/2, cy = r*t+t/2;
+      if (shape == "Círculos") {
+        canvas.drawCircle(Offset(cx,cy), t*0.46, paint);
       } else {
         canvas.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromCenter(center:Offset(cx,cy),width:t*0.88,height:t*0.88),
-            Radius.circular(t*0.16)),paint);
+            Rect.fromCenter(center:Offset(cx,cy), width:t*0.86, height:t*0.86),
+            Radius.circular(t*0.15)), paint);
       }
     }
 
-    // ── Paso 4: Ojos — alto contraste garantizado ───────────────
-    // Color del ojo: tomar el color dominante del logo y forzarlo
-    // a luminancia muy baja para máxima legibilidad del scanner
-    Color eyeBase = dominantColor;
-    final eyeHsl=HSLColor.fromColor(eyeBase);
-    eyeBase=eyeHsl.withLightness(0.18).toColor();
-
-    final pE=Paint()..isAntiAlias=true..color=(customEyes?eyeExt:eyeBase);
-    final pI=Paint()..isAntiAlias=true..color=(customEyes?eyeInt:eyeBase);
-    final EyeStyle es=shape=="Círculos"?EyeStyle.circ:EyeStyle.rect;
+    // Paso 3: ojos con color dominante muy oscuro
+    // El color del ojo toma el hue del logo pero forzado a L=0.18
+    Color eyeBase = Colors.black;
+    if (logoImage != null && !customEyes) {
+      final hsl = HSLColor.fromColor(dominantColor);
+      eyeBase = hsl.withLightness(0.18).toColor();
+    }
+    final pE = Paint()..isAntiAlias=true..color=(customEyes?eyeExt:eyeBase);
+    final pI = Paint()..isAntiAlias=true..color=(customEyes?eyeInt:eyeBase);
+    final EyeStyle es = shape=="Círculos" ? EyeStyle.circ : EyeStyle.rect;
     _drawEye(canvas,0,0,t,pE,pI,es);
     _drawEye(canvas,(m-7)*t,0,t,pE,pI,es);
     _drawEye(canvas,0,(m-7)*t,t,pE,pI,es);
