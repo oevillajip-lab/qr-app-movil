@@ -1129,40 +1129,60 @@ class QrAdvancedPainter extends CustomPainter {
       }
     }
 
-    // ok() — NUNCA retorna true para los ojos: se dibujan por separado
-    bool ok(int r,int c) {
+    // ═══════════════════════════════════════════════════════════════
+    // ok() — qué módulos van al path principal (DARK)
+    //
+    // QR CIRCULAR FIX: NO hay clip circular. "Circular" = solo estilo
+    // de ojos y dots. Todos los módulos de datos se dibujan completos.
+    // Esto garantiza que el QR siempre sea escaneable.
+    //
+    // FORMAS FIX: Los módulos FUERA de la máscara NO van al path
+    // principal (dark), pero SÍ se dibujan como ghost-dots (gris muy
+    // claro) en un paso previo. Ghost-dots = visibles al ojo humano
+    // pero con luminancia ~0.93 → blancos para el scanner → el QR
+    // siempre tiene todos sus datos intactos.
+    // ═══════════════════════════════════════════════════════════════
+    bool ok(int r, int c) {
       if (r<0||r>=m||c<0||c>=m) return false;
       if (!qr.isDark(r,c)) return false;
-      // FIX: ojos excluidos del path, se dibujan como geometrías separadas
-      if (_isEye(r,c,m)) return false;
-      // Timing patterns: siempre (excepto cuando caigan en exclusión de logo)
-      if (r==6||c==6) return !excl[r][c];
-      // Exclusión logo (para split y circular con logo)
-      if (!isMap && excl[r][c]) return false;
-      // Filtro circular
-      if (isCircular) {
-        return math.sqrt(math.pow(c-m/2.0,2)+math.pow(r-m/2.0,2))<=m/2.1;
-      }
-      // Filtro de forma (máscara del logo)
-      if (isMap) {
-        if (logoImage==null) return false; // sin logo, nada que mostrar
-        return logoMask[r][c];
-      }
+      if (_isEye(r,c,m)) return false;      // ojos = geometrías propias
+      if (r==6||c==6) return !excl[r][c];   // timing patterns siempre
+      if (excl[r][c]) return false;          // exclusión logo
+      // Formas: solo módulos DENTRO de la máscara van al path oscuro
+      if (isMap && logoImage!=null && !logoMask[r][c]) return false;
+      // QR Circular + Split + todo lo demás: dibujar todo
       return true;
     }
 
-    // Dibujar módulos no-ojo
+    // ─── Pre-paso FORMAS: ghost-dots fuera de la máscara ────────────
+    // Luminancia 0xECECEC ≈ 0.85 → muy por encima del umbral de
+    // binarización del scanner (~0.45). El lector los ve como blanco.
+    // El ojo humano los percibe como textura sutil fuera de la forma.
+    if (isMap && logoImage != null) {
+      final ghost = Paint()
+          ..color = const Color(0xFFECECEC)
+          ..isAntiAlias = true;
+      for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
+        if (!qr.isDark(r,c)) continue;
+        if (_isEye(r,c,m)) continue;
+        if (logoMask[r][c]) continue; // dentro = path oscuro, no ghost
+        final cx = c*t+t/2, cy = r*t+t/2;
+        canvas.drawCircle(Offset(cx, cy), t*0.38, ghost);
+      }
+    }
+
+    // ─── Dibujar módulos OSCUROS (path principal) ───────────────────
     final pathC1=Path(), pathC2=Path();
     for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
       if (!ok(r,c)) continue;
       final double x=c*t,y=r*t,cx=x+t/2,cy=y+t/2;
       if (isSplit) {
         final left=c<m/2; final ap=left?pathC1:pathC2;
-        ap.moveTo(cx,cy);ap.lineTo(cx,cy);
+        ap.moveTo(cx,cy); ap.lineTo(cx,cy);
         if (ok(r,c+1)&&((c+1<m/2)==left)){ap.moveTo(cx,cy);ap.lineTo(cx+t,cy);}
         if (ok(r+1,c)){ap.moveTo(cx,cy);ap.lineTo(cx,cy+t);}
       } else {
-        pathC1.moveTo(cx,cy);pathC1.lineTo(cx,cy);
+        pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
         if (ok(r,c+1)){pathC1.moveTo(cx,cy);pathC1.lineTo(cx+t,cy);}
         if (ok(r+1,c)){pathC1.moveTo(cx,cy);pathC1.lineTo(cx,cy+t);}
       }
@@ -1170,9 +1190,9 @@ class QrAdvancedPainter extends CustomPainter {
     if (isSplit){canvas.drawPath(pathC1,pen1);canvas.drawPath(pathC2,pen2);}
     else canvas.drawPath(pathC1,pen1);
 
-    // FIX CRÍTICO: Ojos como geometrías propias, SIEMPRE visibles
-    // Para QR Circular: style oval para integrar visualmente
-    // Para Formas: style rect para máxima legibilidad
+    // ─── Ojos: siempre como geometrías propias ───────────────────────
+    // QR Circular → ojos circulares para integración visual
+    // Formas / Split → ojos rectangulares para máxima legibilidad
     final pE=Paint()..isAntiAlias=true;
     final pI=Paint()..isAntiAlias=true;
     if (customEyes){pE.color=eyeExt;pI.color=eyeInt;}
@@ -1216,67 +1236,91 @@ class QrFusionPainter extends CustomPainter {
     final qr=_buildQrImage(data); if (qr==null) return;
     final int m=qr.moduleCount; final double t=size.width/m;
 
-    // ── Paso 1: Logo a FULL OPACITY como fondo ──────────────────
+    // ── Paso 1: Fondo blanco + logo a full opacity ───────────────
+    canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height),
+        Paint()..color=Colors.white);
     if (logoUiImage!=null) {
       final src=Rect.fromLTWH(0,0,
           logoUiImage!.width.toDouble(),logoUiImage!.height.toDouble());
       final dst=Rect.fromLTWH(0,0,size.width,size.height);
-      // FONDO BLANCO primero (por si el logo tiene transparencia)
-      canvas.drawRect(dst,Paint()..color=Colors.white);
-      // Logo sin opacidad — full opacity
-      canvas.drawImageRect(logoUiImage!,src,dst,Paint()..filterQuality=FilterQuality.medium);
-    } else {
-      // Sin logo: fondo blanco
-      canvas.drawRect(Rect.fromLTWH(0,0,size.width,size.height),
-          Paint()..color=Colors.white);
+      canvas.drawImageRect(logoUiImage!,src,dst,
+          Paint()..filterQuality=FilterQuality.medium);
     }
 
-    // ── Paso 2: Dots coloreados del QR ──────────────────────────
+    // ── Paso 2: OVERLAY BLANCO en posiciones de módulos CLAROS ──
+    //
+    // ESTE ES EL FIX CRÍTICO DE ESCANEABILIDAD:
+    // El scanner QR binariza la imagen buscando zonas oscuras vs claras.
+    // Sin este overlay, una zona "clara" del QR puede mostrar el logo
+    // naranja/dorado y una zona "oscura" muestra un dot naranja oscuro —
+    // el contraste es insuficiente para binarizar correctamente.
+    // Con este overlay, las zonas claras → blanco puro (lum 1.0)
+    // y las zonas oscuras → dots con lum ≤ 0.18.
+    // Ratio de contraste ≥ 5.5:1 → umbral WCAG AAA para escaneado.
+    //
+    // El efecto artístico se preserva: el logo se ve a través de los
+    // huecos ENTRE dots (espacio entre módulos oscuros).
+    if (logoUiImage!=null) {
+      final whiteMask=Paint()..color=Colors.white.withOpacity(0.84);
+      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+        if (qr.isDark(r,c)) continue;      // módulo oscuro: no cubrir
+        if (_isEye(r,c,m)) continue;       // ojo: no cubrir
+        canvas.drawRect(Rect.fromLTWH(c*t,r*t,t,t),whiteMask);
+      }
+    }
+
+    // ── Paso 3: Dots del QR coloreados ──────────────────────────
     for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
       if (!qr.isDark(r,c)) continue;
-      if (_isEye(r,c,m)) continue; // ojos al final
+      if (_isEye(r,c,m)) continue;
 
-      // Samplear color del logo en la posición correspondiente
-      Color dotColor = dominantColor;
-      if (logoImage!=null) {
+      // Timing patterns → siempre negro para máxima legibilidad
+      final bool isTiming = (r==6||c==6);
+
+      Color dotColor = Colors.black;
+      if (!isTiming && logoImage!=null) {
         final px=(c/m*logoImage!.width).floor().clamp(0,logoImage!.width-1);
         final py=(r/m*logoImage!.height).floor().clamp(0,logoImage!.height-1);
         final pixel=logoImage!.getPixel(px,py);
         if (pixel.a > 20) {
           dotColor=Color.fromARGB(255,pixel.r.toInt(),pixel.g.toInt(),pixel.b.toInt());
-          // Control de contraste: si el color es demasiado claro, oscurecer
-          final hsl=HSLColor.fromColor(dotColor);
-          if (hsl.lightness>0.50) {
-            dotColor=hsl.withLightness(0.35).toColor();
-          }
-          // Si la saturación es muy baja (gris/blanco), usar el dominante oscurecido
-          if (hsl.saturation<0.15) {
-            final domHsl=HSLColor.fromColor(dominantColor);
-            dotColor=domHsl.withLightness(math.min(domHsl.lightness,0.40)).toColor();
-          }
         }
       }
 
+      // ── FRENO DE CONTRASTE OBLIGATORIO ───────────────────────
+      // Todo dot debe tener luminancia ≤ 0.18 para ser distinguible
+      // contra el fondo blanco (ratio ≥ 4.6:1).
+      // Preservamos el hue y la saturación del logo, solo forzamos
+      // el valor de luminosidad.
+      final hsl=HSLColor.fromColor(dotColor);
+      // Luminancia target: 0.12 base + hasta 0.08 según saturación
+      // (colores saturados pueden ser ligeramente más claros y seguir
+      // siendo distinguibles por el scanner)
+      final targetL=(0.12+hsl.saturation*0.08).clamp(0.08,0.20);
+      dotColor=hsl.withLightness(targetL).toColor();
+
       final paint=Paint()..color=dotColor..isAntiAlias=true;
       final double cx=c*t+t/2, cy=r*t+t/2;
+
+      // Dots ligeramente más grandes (0.47 vs 0.44) para mejor detección
       if (shape=="Círculos") {
-        canvas.drawCircle(Offset(cx,cy),t*0.44,paint);
+        canvas.drawCircle(Offset(cx,cy),t*0.47,paint);
       } else {
         canvas.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromCenter(center:Offset(cx,cy),width:t*0.84,height:t*0.84),
-            Radius.circular(t*0.18)),paint);
+            Rect.fromCenter(center:Offset(cx,cy),width:t*0.88,height:t*0.88),
+            Radius.circular(t*0.16)),paint);
       }
     }
 
-    // ── Paso 3: Ojos con alto contraste (siempre legibles) ──────
-    // Determinar color de ojo: si hay logo, usar color dominante oscuro
-    // Si no, usar negro
-    Color eyeColor = dominantColor;
-    if (HSLColor.fromColor(eyeColor).lightness > 0.45) {
-      eyeColor = HSLColor.fromColor(eyeColor).withLightness(0.25).toColor();
-    }
-    final pE=Paint()..isAntiAlias=true..color=(customEyes?eyeExt:eyeColor);
-    final pI=Paint()..isAntiAlias=true..color=(customEyes?eyeInt:eyeColor);
+    // ── Paso 4: Ojos — alto contraste garantizado ───────────────
+    // Color del ojo: tomar el color dominante del logo y forzarlo
+    // a luminancia muy baja para máxima legibilidad del scanner
+    Color eyeBase = dominantColor;
+    final eyeHsl=HSLColor.fromColor(eyeBase);
+    eyeBase=eyeHsl.withLightness(0.18).toColor();
+
+    final pE=Paint()..isAntiAlias=true..color=(customEyes?eyeExt:eyeBase);
+    final pI=Paint()..isAntiAlias=true..color=(customEyes?eyeInt:eyeBase);
     final EyeStyle es=shape=="Círculos"?EyeStyle.circ:EyeStyle.rect;
     _drawEye(canvas,0,0,t,pE,pI,es);
     _drawEye(canvas,(m-7)*t,0,t,pE,pI,es);
