@@ -92,7 +92,7 @@ class _MainScreenState extends State<MainScreen>
 
   String _qrType      = "Sitio Web (URL)";
   String _estilo      = "Liquid Pro (Gusano)";
-  String _estiloAvz   = "QR Circular";
+  String _estiloAvz   = "QR Circular (Forma)";
   String _qrColorMode = "Sólido (Un Color)";
   String _qrGradDir   = "Vertical";
   Color  _qrC1        = Colors.black;
@@ -129,9 +129,9 @@ class _MainScreenState extends State<MainScreen>
     "Barras (Vertical)",
     "Circular (Puntos)",
     "Diamantes (Rombos)",
-    "QR Circular",
+    "QR Circular (Forma)",
     "Split Liquid (Mitades)",
-    "Forma de Mapa (Máscara)",
+    "Formas (Máscara)",
   ];
 
   @override
@@ -314,7 +314,7 @@ class _MainScreenState extends State<MainScreen>
   Widget _buildAdvancedTab() {
     final data      = _getFinalData();
     final isEmpty   = data.isEmpty;
-    final isMap     = _estiloAvz == "Forma de Mapa (Máscara)";
+    final isMap     = _estiloAvz == "Formas (Máscara)";
     final effLogo   = _effectiveLogo(isMap);
     final limited   = _logoBytes != null && !isMap && effLogo < _logoSize - 0.5;
 
@@ -445,23 +445,27 @@ class _MainScreenState extends State<MainScreen>
                               style: style, c1: _qrC1, c2: _qrC2),
                         ),
                       ),
-                      // Logo o placeholder "TU LOGO"
+                      // Logo o placeholder
                       if (_logoBytes != null)
                         SizedBox(width: 24, height: 24,
                             child: Image.memory(_logoBytes!, fit: BoxFit.contain))
+                      else if (style.contains("Formas"))
+                        // Ícono árbol para estilo Formas
+                        Icon(Icons.park, size: 22,
+                            color: Colors.white.withOpacity(0.9))
                       else
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.88),
-                            borderRadius: BorderRadius.circular(5),
+                            borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: Colors.grey.shade300, width: 0.8),
                           ),
-                          child: const Text("TU\nLOGO",
+                          child: const Text("LOGO",
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900,
-                                  color: Colors.black87, height: 1.15,
-                                  letterSpacing: 0.3)),
+                                  color: Colors.black87, height: 1.1,
+                                  letterSpacing: 0.8)),
                         ),
                     ]),
                   ),
@@ -497,7 +501,7 @@ class _MainScreenState extends State<MainScreen>
     if (s.contains("Circular") && !s.contains("QR")) return "Circular";
     if (s.contains("QR Circ"))  return "QR Circular";
     if (s.contains("Split"))    return "Split";
-    if (s.contains("Mapa"))     return "Mapa";
+    if (s.contains("Formas"))   return "Formas";
     return s;
   }
 
@@ -569,8 +573,8 @@ class _MainScreenState extends State<MainScreen>
   // PREVIEW QR
   // ══════════════════════════════════════════════════════════════
   Widget _qrPreview(String data, bool isEmpty, String estilo, bool isAdv, double effLogo) {
-    final isMap      = estilo == "Forma de Mapa (Máscara)";
-    final isAdvStyle = isAdv && (estilo == "QR Circular" ||
+    final isMap      = estilo == "Formas (Máscara)";
+    final isAdvStyle = isAdv && (estilo == "QR Circular (Forma)" ||
         estilo == "Split Liquid (Mitades)" || isMap);
     final bgColor = _bgMode == "Transparente"  ? Colors.transparent
         : _bgMode == "Sólido (Color)"          ? _bgC1
@@ -844,7 +848,7 @@ class StylePreviewPainter extends CustomPainter {
     bool ok(int r, int c) {
       if (r<0||r>=m||c<0||c>=m) return false;
       if (!qr.isDark(r,c)) return false;
-      if (isEye(r,c)) return false;
+      if (isEye(r,c)) return true; // ojos SIEMPRE visibles
       if (inCenter(r,c)) return false;
       return true;
     }
@@ -872,7 +876,7 @@ class StylePreviewPainter extends CustomPainter {
         double h=((r*17+c*31)%100)/100.0; double sc=0.65+0.45*h; double off=t*(1-sc)/2;
         canvas.drawPath(Path()..moveTo(cx,y+off)..lineTo(x+t-off,cy)
             ..lineTo(cx,y+t-off)..lineTo(x+off,cy)..close(), paint);
-      } else if (style=="QR Circular") {
+      } else if (style=="QR Circular (Forma)") {
         final d=math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2));
         if (d>m/2.1) continue;
         lPath.moveTo(cx,cy); lPath.lineTo(cx,cy);
@@ -896,7 +900,7 @@ class StylePreviewPainter extends CustomPainter {
       }
     }
 
-    if (style.contains("Gusano")||style=="QR Circular") {
+    if (style.contains("Gusano")||style=="QR Circular (Forma)") {
       canvas.drawPath(lPath, lPaint);
     }
 
@@ -1124,7 +1128,8 @@ class QrAdvancedPainter extends CustomPainter {
     if (qr == null) return;
     final int m = qr.moduleCount;
     final double t = size.width / m;
-    final bool isMap = estiloAvanzado == "Forma de Mapa (Máscara)";
+    final bool isMap = estiloAvanzado == "Formas (Máscara)";
+    final bool isCircular = estiloAvanzado == "QR Circular (Forma)";
 
     // FRENO MATEMÁTICO
     final double effLogo = isMap
@@ -1189,9 +1194,10 @@ class QrAdvancedPainter extends CustomPainter {
     bool ok(int r, int c) {
       if (r<0||r>=m||c<0||c>=m) return false;
       if (!qr.isDark(r,c)) return false;
-      if (_isEye(r,c,m)) return false;
-      if (!isMap && excl[r][c]) return false;
-      if (estiloAvanzado=="QR Circular") {
+      // Ojos: siempre se dibujan en todos los estilos (son esenciales para escanear)
+      if (_isEye(r,c,m)) return true;
+      if (!isMap && !isCircular && excl[r][c]) return false;
+      if (isCircular) {
         if (math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2)) > m/2.1) return false;
       }
       if (isMap && logoImage!=null && !logoMask[r][c]) return false;
