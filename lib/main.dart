@@ -1513,7 +1513,7 @@ class QrAdvancedPainter extends CustomPainter {
         }
       }
 
-        void drawDecorSilhouette({
+      void drawDecorSilhouette({
         Rect? reservedRect,
         required double moduleStep,
       }) {
@@ -1521,6 +1521,71 @@ class QrAdvancedPainter extends CustomPainter {
         final int cols = (size.width / decoT).ceil();
         final int rows = (size.height / decoT).ceil();
 
+        bool cellAllowed(Rect cellRect) {
+          if (cellRect.right > size.width || cellRect.bottom > size.height) {
+            return false;
+          }
+          if (reservedRect != null && reservedRect.overlaps(cellRect)) {
+            return false;
+          }
+          if (!rectWellInsideShape(cellRect)) return false;
+          return true;
+        }
+
+        // MODO BARRAS: construir columnas continuas por tramos
+        if (mapSubStyle.contains("Barras")) {
+          for (int cc = 0; cc < cols; cc++) {
+            int rr = 0;
+
+            while (rr < rows) {
+              final Rect startRect = Rect.fromLTWH(
+                cc * decoT,
+                rr * decoT,
+                decoT,
+                decoT,
+              );
+
+              if (!cellAllowed(startRect)) {
+                rr++;
+                continue;
+              }
+
+              int endR = rr;
+              while (endR + 1 < rows) {
+                final Rect nextRect = Rect.fromLTWH(
+                  cc * decoT,
+                  (endR + 1) * decoT,
+                  decoT,
+                  decoT,
+                );
+                if (!cellAllowed(nextRect)) break;
+                endR++;
+              }
+
+              final double x = cc * decoT;
+              final double y = rr * decoT;
+              final double h = (endR - rr + 1) * decoT;
+
+              canvas.drawRRect(
+                RRect.fromRectAndRadius(
+                  Rect.fromLTWH(
+                    x + decoT * 0.22,
+                    y + decoT * 0.06,
+                    decoT * 0.56,
+                    h - decoT * 0.12,
+                  ),
+                  Radius.circular(decoT * 0.28),
+                ),
+                solidPaint,
+              );
+
+              rr = endR + 1;
+            }
+          }
+          return;
+        }
+
+        // RESTO DE ESTILOS: sigue por celda
         for (int rr = 0; rr < rows; rr++) {
           for (int cc = 0; cc < cols; cc++) {
             final Rect cellRect = Rect.fromLTWH(
@@ -1530,13 +1595,7 @@ class QrAdvancedPainter extends CustomPainter {
               decoT,
             );
 
-            if (cellRect.right > size.width || cellRect.bottom > size.height) {
-              continue;
-            }
-            if (reservedRect != null && reservedRect.overlaps(cellRect)) {
-              continue;
-            }
-            if (!rectWellInsideShape(cellRect)) continue;
+            if (!cellAllowed(cellRect)) continue;
 
             drawDecorCell(cellRect, rr, cc);
           }
