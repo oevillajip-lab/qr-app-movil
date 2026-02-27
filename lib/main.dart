@@ -1192,52 +1192,92 @@ class QrAdvancedPainter extends CustomPainter {
   final Color qrC1, qrC2, eyeExt, eyeInt;
 
   const QrAdvancedPainter({
-    required this.data, required this.estiloAvanzado, required this.mapSubStyle,
-    required this.logoImage, required this.outerMask,
-    required this.shapeImage, required this.shapeMask,
-    required this.logoSize, required this.auraSize,
-    required this.qrC1, required this.qrC2,
-    required this.qrMode, required this.qrDir,
-    required this.customEyes, required this.eyeExt, required this.eyeInt,
+    required this.data,
+    required this.estiloAvanzado,
+    required this.mapSubStyle,
+    required this.logoImage,
+    required this.outerMask,
+    required this.shapeImage,
+    required this.shapeMask,
+    required this.logoSize,
+    required this.auraSize,
+    required this.qrC1,
+    required this.qrC2,
+    required this.qrMode,
+    required this.qrDir,
+    required this.customEyes,
+    required this.eyeExt,
+    required this.eyeInt,
   });
 
   bool _isEye(int r, int c, int m) =>
-      (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
+      (r < 7 && c < 7) || (r < 7 && c >= m - 7) || (r >= m - 7 && c < 7);
 
   void _drawEye(Canvas canvas, double ox, double oy, double t,
       Paint pE, Paint pI, EyeStyle es) {
     final s = 7 * t;
+
     if (es == EyeStyle.circ) {
-      canvas.drawPath(Path()
-          ..addOval(Rect.fromLTWH(ox,oy,s,s))
-          ..addOval(Rect.fromLTWH(ox+t,oy+t,s-2*t,s-2*t))
-          ..fillType=PathFillType.evenOdd, pE);
-      canvas.drawOval(Rect.fromLTWH(ox+2.1*t,oy+2.1*t,s-4.2*t,s-4.2*t), pI);
+      canvas.drawPath(
+        Path()
+          ..addOval(Rect.fromLTWH(ox, oy, s, s))
+          ..addOval(Rect.fromLTWH(ox + t, oy + t, s - 2 * t, s - 2 * t))
+          ..fillType = PathFillType.evenOdd,
+        pE,
+      );
+      canvas.drawOval(
+        Rect.fromLTWH(ox + 2.1 * t, oy + 2.1 * t, s - 4.2 * t, s - 4.2 * t),
+        pI,
+      );
     } else if (es == EyeStyle.diamond) {
-      double cx=ox+3.5*t, cy=oy+3.5*t;
-      canvas.drawPath(Path()
-          ..moveTo(cx,oy)..lineTo(ox+7*t,cy)..lineTo(cx,oy+7*t)..lineTo(ox,cy)
-          ..moveTo(cx,oy+1.2*t)..lineTo(ox+5.8*t,cy)
-          ..lineTo(cx,oy+5.8*t)..lineTo(ox+1.2*t,cy)
-          ..fillType=PathFillType.evenOdd, pE);
-      canvas.drawPath(Path()
-          ..moveTo(cx,oy+2.2*t)..lineTo(ox+4.8*t,cy)
-          ..lineTo(cx,oy+4.8*t)..lineTo(ox+2.2*t,cy)..close(), pI);
+      final cx = ox + 3.5 * t;
+      final cy = oy + 3.5 * t;
+
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx, oy)
+          ..lineTo(ox + 7 * t, cy)
+          ..lineTo(cx, oy + 7 * t)
+          ..lineTo(ox, cy)
+          ..moveTo(cx, oy + 1.2 * t)
+          ..lineTo(ox + 5.8 * t, cy)
+          ..lineTo(cx, oy + 5.8 * t)
+          ..lineTo(ox + 1.2 * t, cy)
+          ..fillType = PathFillType.evenOdd,
+        pE,
+      );
+
+      canvas.drawPath(
+        Path()
+          ..moveTo(cx, oy + 2.2 * t)
+          ..lineTo(ox + 4.8 * t, cy)
+          ..lineTo(cx, oy + 4.8 * t)
+          ..lineTo(ox + 2.2 * t, cy)
+          ..close(),
+        pI,
+      );
     } else {
-      canvas.drawPath(Path()
-          ..addRect(Rect.fromLTWH(ox,oy,s,s))
-          ..addRect(Rect.fromLTWH(ox+t,oy+t,s-2*t,s-2*t))
-          ..fillType=PathFillType.evenOdd, pE);
-      canvas.drawRect(Rect.fromLTWH(ox+2.1*t,oy+2.1*t,s-4.2*t,s-4.4*t), pI);
+      canvas.drawPath(
+        Path()
+          ..addRect(Rect.fromLTWH(ox, oy, s, s))
+          ..addRect(Rect.fromLTWH(ox + t, oy + t, s - 2 * t, s - 2 * t))
+          ..fillType = PathFillType.evenOdd,
+        pE,
+      );
+
+      canvas.drawRect(
+        Rect.fromLTWH(ox + 2.1 * t, oy + 2.1 * t, s - 4.2 * t, s - 4.4 * t),
+        pI,
+      );
     }
   }
 
-      List<List<bool>> _buildCanvasShapeMask(int width, int height) {
+  List<List<bool>> _buildCanvasShapeMask(int width, int height) {
     final canvasMask = List.generate(height, (_) => List.filled(width, false));
 
-if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
-  return canvasMask;
-}
+    if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
+      return canvasMask;
+    }
 
     final int sh = shapeMask!.length;
     final int sw = shapeMask![0].length;
@@ -1273,6 +1313,7 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
   }) {
     final int h = canvasMask.length;
     if (h == 0) return null;
+
     final int w = canvasMask[0].length;
     if (w == 0) return null;
 
@@ -1289,14 +1330,14 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
     int areaSum(int left, int top, int side) {
       final int right = left + side;
       final int bottom = top + side;
-      return prefix[bottom][right]
-          - prefix[top][right]
-          - prefix[bottom][left]
-          + prefix[top][left];
+      return prefix[bottom][right] -
+          prefix[top][right] -
+          prefix[bottom][left] +
+          prefix[top][left];
     }
 
     final int maxSide = math.min(w, h);
-    final int safeMin = minSide.clamp(1, maxSide);
+    final int safeMin = minSide.clamp(1, maxSide).toInt();
 
     for (int side = maxSide; side >= safeMin; side -= step) {
       Rect? best;
@@ -1329,12 +1370,13 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
     }
 
     return null;
-  }  
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     final qr = _buildQrImage(data);
     if (qr == null) return;
+
     final int m = qr.moduleCount;
     final double t = size.width / m;
 
@@ -1342,39 +1384,49 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
         estiloAvanzado.contains("Mapa") ||
         estiloAvanzado == "Formas (Máscara)";
 
-    // ── Shader / Pintura base ────────────────────────────────────
     ui.Shader? grad;
     if (qrMode == "Degradado Custom") {
-      var b=Alignment.topCenter, e=Alignment.bottomCenter;
-      if (qrDir=="Horizontal"){b=Alignment.centerLeft;e=Alignment.centerRight;}
-      if (qrDir=="Diagonal"){b=Alignment.topLeft;e=Alignment.bottomRight;}
+      var b = Alignment.topCenter, e = Alignment.bottomCenter;
+      if (qrDir == "Horizontal") {
+        b = Alignment.centerLeft;
+        e = Alignment.centerRight;
+      }
+      if (qrDir == "Diagonal") {
+        b = Alignment.topLeft;
+        e = Alignment.bottomRight;
+      }
+
       grad = ui.Gradient.linear(
-          Offset(size.width*(b.x+1)/2, size.height*(b.y+1)/2),
-          Offset(size.width*(e.x+1)/2, size.height*(e.y+1)/2),
-          [qrC1, qrC2]);
+        Offset(size.width * (b.x + 1) / 2, size.height * (b.y + 1) / 2),
+        Offset(size.width * (e.x + 1) / 2, size.height * (e.y + 1) / 2),
+        [qrC1, qrC2],
+      );
     }
-    final solidPaint = Paint()..isAntiAlias=true;
-    if (grad!=null) solidPaint.shader=grad; else solidPaint.color=qrC1;
 
-    final liquidPen = Paint()
-      ..isAntiAlias=true..style=PaintingStyle.stroke
-      ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
-    if (grad!=null) liquidPen.shader=grad; else liquidPen.color=qrC1;
+    final solidPaint = Paint()..isAntiAlias = true;
+    if (grad != null) {
+      solidPaint.shader = grad;
+    } else {
+      solidPaint.color = qrC1;
+    }
 
-    final pE=Paint()..isAntiAlias=true;
-    final pI=Paint()..isAntiAlias=true;
-    if (customEyes){pE.color=eyeExt;pI.color=eyeInt;}
-    else if (grad!=null){pE.shader=grad;pI.shader=grad;}
-    else {pE.color=qrC1;pI.color=qrC1;}
+    final pE = Paint()..isAntiAlias = true;
+    final pI = Paint()..isAntiAlias = true;
+    if (customEyes) {
+      pE.color = eyeExt;
+      pI.color = eyeInt;
+    } else if (grad != null) {
+      pE.shader = grad;
+      pI.shader = grad;
+    } else {
+      pE.color = qrC1;
+      pI.color = qrC1;
+    }
 
-    // Estilo de ojo según sub-estilo elegido
     EyeStyle eyeStyle = EyeStyle.rect;
-    if (mapSubStyle.contains("Puntos"))    eyeStyle = EyeStyle.circ;
+    if (mapSubStyle.contains("Puntos")) eyeStyle = EyeStyle.circ;
     if (mapSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
 
-    // ════════════════════════════════════════════════════════════
-    // MODO FORMAS (Máscara de Silueta)
-    // ════════════════════════════════════════════════════════════
     if (isShape) {
       final int maskW = math.max(size.width.round(), 1);
       final int maskH = math.max(size.height.round(), 1);
@@ -1429,6 +1481,7 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
           final double h = ((rr * 17 + cc * 31) % 100) / 100.0;
           final double sc = 0.62 + 0.22 * h;
           final double off = cell * (1 - sc) / 2;
+
           canvas.drawPath(
             Path()
               ..moveTo(cx, y + off)
@@ -1438,7 +1491,8 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
               ..close(),
             solidPaint,
           );
-        } else if (mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid")) {
+        } else if (mapSubStyle.contains("Gusano") ||
+            mapSubStyle.contains("Liquid")) {
           canvas.drawRRect(
             RRect.fromRectAndRadius(
               Rect.fromLTWH(
@@ -1464,7 +1518,7 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
             ? reservedRect.width / (m + 4.0)
             : size.width / (m + 6.0);
 
-        final double decoT = probeSide.clamp(4.0, 14.0);
+        final double decoT = probeSide.clamp(4.0, 14.0).toDouble();
         final int cols = (size.width / decoT).ceil();
         final int rows = (size.height / decoT).ceil();
 
@@ -1477,8 +1531,12 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
               decoT,
             );
 
-            if (cellRect.right > size.width || cellRect.bottom > size.height) continue;
-            if (reservedRect != null && reservedRect.overlaps(cellRect)) continue;
+            if (cellRect.right > size.width || cellRect.bottom > size.height) {
+              continue;
+            }
+            if (reservedRect != null && reservedRect.overlaps(cellRect)) {
+              continue;
+            }
             if (!rectWellInsideShape(cellRect)) continue;
 
             drawDecorCell(cellRect, rr, cc);
@@ -1489,12 +1547,12 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
       final int preferredSide = math.min(
         math.min(maskW, maskH),
         math.max(((m + 4) * 3.4).round(), 96),
-      );
+      ).toInt();
 
       final int relaxedSide = math.min(
         math.min(maskW, maskH),
         math.max(((m + 4) * 2.8).round(), 76),
-      );
+      ).toInt();
 
       Rect? qrBox = _findBestQrSquare(
         canvasMask,
@@ -1551,7 +1609,8 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
         return true;
       }
 
-      final bool isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+      final bool isLiquid = mapSubStyle.contains("Gusano") ||
+          mapSubStyle.contains("Liquid");
       final bool isBars = mapSubStyle.contains("Barras");
       final bool isDots = mapSubStyle.contains("Puntos");
       final bool isDiamonds = mapSubStyle.contains("Diamantes");
@@ -1575,7 +1634,6 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
               qrPath.moveTo(cx, cy);
               qrPath.lineTo(cx + qt, cy);
             }
-
             if (darkOk(r + 1, c)) {
               qrPath.moveTo(cx, cy);
               qrPath.lineTo(cx, cy + qt);
@@ -1635,191 +1693,124 @@ if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
       }
 
       _drawEye(canvas, qrDataRect.left, qrDataRect.top, qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.right - 7 * qt, qrDataRect.top, qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
-      } else {
-        // Sin silueta: modo fallback (dibuja todo)
-        for (int r=0; r<m; r++) for (int c=0; c<m; c++) inShape[r][c] = true;
-      }
-
-      // Paso 2: Exclusión de logo central
-      final excl = List.generate(m, (_) => List.filled(m, false));
-      if (logoImage != null && outerMask != null) {
-        final effLogo = logoSize.clamp(
-            20.0, _safeLogoMax(modules: m, auraModules: auraSize) * 0.5);
-        final lf = effLogo / size.width;
-        final ls = (1 - lf) / 2.0, le = ls + lf;
-        final base = List.generate(m, (_) => List.filled(m, false));
-        for (int r=0;r<m;r++) for (int c=0;c<m;c++){
-          bool hit=false;
-          for (double dy=0.2;dy<=0.8&&!hit;dy+=0.3)
-            for (double dx=0.2;dx<=0.8&&!hit;dx+=0.3){
-              final nx=(c+dx)/m, ny=(r+dy)/m;
-              if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le){
-                final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
-                final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
-                if (outerMask![py][px]) hit=true;
-              }
-            }
-          if (hit) base[r][c]=true;
-        }
-        final ar = auraSize.toInt();
-        for (int r=0;r<m;r++) for (int c=0;c<m;c++)
-          if (base[r][c]) for (int dr=-ar;dr<=ar;dr++) for (int dc=-ar;dc<=ar;dc++){
-            final nr=r+dr, nc=c+dc;
-            if (nr>=0&&nr<m&&nc>=0&&nc<m) excl[nr][nc]=true;
-          }
-      }
-
-      // Paso 3: Ghost-dots — módulos oscuros FUERA de la silueta
-      // Luminancia 0xF2F2F2 = 0.90 → scanner = "blanco"
-      final ghostPaint = Paint()
-        ..color = const Color(0xFFF2F2F2)
-        ..isAntiAlias = true;
-      for (int r = 0; r < m; r++) {
-        for (int c = 0; c < m; c++) {
-          if (!qr.isDark(r, c)) continue;
-          if (_isEye(r, c, m)) continue;
-          if (excl[r][c]) continue;
-          if (inShape[r][c]) continue; // dentro → se dibuja normalmente
-          canvas.drawCircle(
-              Offset(c*t + t/2, r*t + t/2), t * 0.38, ghostPaint);
-        }
-      }
-
-      // Paso 4: Módulos oscuros DENTRO de la silueta con el estilo elegido
-      bool darkOk(int r, int c) {
-        if (r<0||r>=m||c<0||c>=m) return false;
-        if (!qr.isDark(r, c)) return false;
-        if (_isEye(r, c, m)) return false;
-        if (excl[r][c]) return false;
-        if (!inShape[r][c]) return false;
-        return true;
-      }
-
-      final isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-      final isBarras = mapSubStyle.contains("Barras");
-      final liquidPath = Path();
-
-      for (int r = 0; r < m; r++) {
-        for (int c = 0; c < m; c++) {
-          if (!darkOk(r, c)) continue;
-          final double x = c*t, y = r*t, cx = x+t/2, cy = y+t/2;
-
-          if (isLiquid) {
-            liquidPath.moveTo(cx, cy); liquidPath.lineTo(cx, cy);
-            if (darkOk(r, c+1)) { liquidPath.moveTo(cx,cy); liquidPath.lineTo(cx+t,cy); }
-            if (darkOk(r+1, c)) { liquidPath.moveTo(cx,cy); liquidPath.lineTo(cx,cy+t); }
-          } else if (isBarras) {
-            if (r==0 || !darkOk(r-1,c)) {
-              int er=r; while (er+1<m && darkOk(er+1,c)) er++;
-              final p2 = Paint()..isAntiAlias=true;
-              if (grad!=null) p2.shader=grad; else p2.color=qrC1;
-              canvas.drawRRect(RRect.fromRectAndRadius(
-                  Rect.fromLTWH(x+t*0.1, y, t*0.8, (er-r+1)*t),
-                  Radius.circular(t*0.38)), p2);
-            }
-          } else if (mapSubStyle.contains("Puntos")) {
-            double h = ((r*13+c*29)%100)/100.0;
-            canvas.drawCircle(Offset(cx,cy), t*(0.35+0.13*h), solidPaint);
-          } else if (mapSubStyle.contains("Diamantes")) {
-            double h = ((r*17+c*31)%100)/100.0;
-            double sc = 0.65+0.45*h, off = t*(1-sc)/2;
-            canvas.drawPath(Path()
-                ..moveTo(cx,y+off)..lineTo(x+t-off,cy)
-                ..lineTo(cx,y+t-off)..lineTo(x+off,cy)..close(), solidPaint);
-          } else {
-            // Normal (cuadrado)
-            canvas.drawRect(Rect.fromLTWH(x, y, t+0.3, t+0.3), solidPaint);
-          }
-        }
-      }
-
-      if (isLiquid) canvas.drawPath(liquidPath, liquidPen);
-
-      // Paso 5: Ojos — siempre visibles, fondo blanco local para claridad
-      // El ojo TL ocupa (0..6, 0..6), TR ocupa (0..6, m-7..m-1),
-      // BL ocupa (m-7..m-1, 0..6).
-      void drawEyeWithBg(double ox, double oy) {
-        // Fondo blanco detrás del ojo para que sea visible
-        // aunque la silueta sea oscura en esa zona
-        canvas.drawRect(
-            Rect.fromLTWH(ox - t*0.5, oy - t*0.5,
-                7*t + t, 7*t + t),
-            Paint()..color = Colors.white);
-        _drawEye(canvas, ox, oy, t, pE, pI, eyeStyle);
-      }
-
-      drawEyeWithBg(0,         0        );
-      drawEyeWithBg((m-7)*t,   0        );
-      drawEyeWithBg(0,         (m-7)*t  );
-
+      _drawEye(
+          canvas, qrDataRect.right - 7 * qt, qrDataRect.top, qt, pE, pI, eyeStyle);
+      _drawEye(
+          canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
     } else {
-      // ════════════════════════════════════════════════════════════
-      // FALLBACK: QR Circular y Split Liquid
-      // ════════════════════════════════════════════════════════════
       final pen1 = Paint()
-        ..isAntiAlias=true..style=PaintingStyle.stroke
-        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
-      if (grad!=null) pen1.shader=grad; else pen1.color=qrC1;
-      final pen2 = Paint()
-        ..isAntiAlias=true..style=PaintingStyle.stroke
-        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round
-        ..color=qrC2;
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = t
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      if (grad != null) {
+        pen1.shader = grad;
+      } else {
+        pen1.color = qrC1;
+      }
 
-      final isSplit    = estiloAvanzado.contains("Split");
+      final pen2 = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = t
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = qrC2;
+
+      final isSplit = estiloAvanzado.contains("Split");
       final isCircular = estiloAvanzado.contains("QR Circ");
 
-      final double circRad = (m/2.0)-0.5;
-      final double circCx  = m/2.0, circCy = m/2.0;
-      bool inCircle(int r,int c){
-        final dr=(r+0.5)-circCy, dc=(c+0.5)-circCx;
-        return math.sqrt(dr*dr+dc*dc)<=circRad;
+      final double circRad = (m / 2.0) - 0.5;
+      final double circCx = m / 2.0;
+      final double circCy = m / 2.0;
+
+      bool inCircle(int r, int c) {
+        final dr = (r + 0.5) - circCy;
+        final dc = (c + 0.5) - circCx;
+        return math.sqrt(dr * dr + dc * dc) <= circRad;
       }
 
-      // Ghost-dots para circular
       if (isCircular) {
-        final gp = Paint()..color=const Color(0xFFF0F0F0)..isAntiAlias=true;
-        for (int r=0;r<m;r++) for (int c=0;c<m;c++){
-          if (!qr.isDark(r,c)) continue;
-          if (_isEye(r,c,m)) continue;
-          if (inCircle(r,c)) continue;
-          canvas.drawCircle(Offset(c*t+t/2,r*t+t/2),t*0.40,gp);
+        final gp = Paint()
+          ..color = const Color(0xFFF0F0F0)
+          ..isAntiAlias = true;
+
+        for (int r = 0; r < m; r++) {
+          for (int c = 0; c < m; c++) {
+            if (!qr.isDark(r, c)) continue;
+            if (_isEye(r, c, m)) continue;
+            if (inCircle(r, c)) continue;
+            canvas.drawCircle(Offset(c * t + t / 2, r * t + t / 2), t * 0.40, gp);
+          }
         }
       }
 
-      bool ok(int r,int c){
-        if (r<0||r>=m||c<0||c>=m) return false;
-        if (!qr.isDark(r,c)) return false;
-        if (_isEye(r,c,m)) return false;
-        if (isCircular&&!inCircle(r,c)) return false;
+      bool ok(int r, int c) {
+        if (r < 0 || r >= m || c < 0 || c >= m) return false;
+        if (!qr.isDark(r, c)) return false;
+        if (_isEye(r, c, m)) return false;
+        if (isCircular && !inCircle(r, c)) return false;
         return true;
       }
 
-      final pathC1=Path(), pathC2=Path();
-      for (int r=0;r<m;r++) for (int c=0;c<m;c++){
-        if (!ok(r,c)) continue;
-        final double x=c*t,y=r*t,cx=x+t/2,cy=y+t/2;
-        if (isSplit){
-          final left=c<m/2; final ap=left?pathC1:pathC2;
-          ap.moveTo(cx,cy);ap.lineTo(cx,cy);
-          if(ok(r,c+1)&&((c+1<m/2)==left)){ap.moveTo(cx,cy);ap.lineTo(cx+t,cy);}
-          if(ok(r+1,c)){ap.moveTo(cx,cy);ap.lineTo(cx,cy+t);}
-        } else {
-          pathC1.moveTo(cx,cy);pathC1.lineTo(cx,cy);
-          if(ok(r,c+1)){pathC1.moveTo(cx,cy);pathC1.lineTo(cx+t,cy);}
-          if(ok(r+1,c)){pathC1.moveTo(cx,cy);pathC1.lineTo(cx,cy+t);}
+      final pathC1 = Path();
+      final pathC2 = Path();
+
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!ok(r, c)) continue;
+
+          final double x = c * t;
+          final double y = r * t;
+          final double cx = x + t / 2;
+          final double cy = y + t / 2;
+
+          if (isSplit) {
+            final bool left = c < m / 2;
+            final Path ap = left ? pathC1 : pathC2;
+
+            ap.moveTo(cx, cy);
+            ap.lineTo(cx, cy);
+
+            if (ok(r, c + 1) && ((c + 1 < m / 2) == left)) {
+              ap.moveTo(cx, cy);
+              ap.lineTo(cx + t, cy);
+            }
+            if (ok(r + 1, c)) {
+              ap.moveTo(cx, cy);
+              ap.lineTo(cx, cy + t);
+            }
+          } else {
+            pathC1.moveTo(cx, cy);
+            pathC1.lineTo(cx, cy);
+
+            if (ok(r, c + 1)) {
+              pathC1.moveTo(cx, cy);
+              pathC1.lineTo(cx + t, cy);
+            }
+            if (ok(r + 1, c)) {
+              pathC1.moveTo(cx, cy);
+              pathC1.lineTo(cx, cy + t);
+            }
+          }
         }
       }
-      if (isSplit){canvas.drawPath(pathC1,pen1);canvas.drawPath(pathC2,pen2);}
-      else canvas.drawPath(pathC1,pen1);
+
+      if (isSplit) {
+        canvas.drawPath(pathC1, pen1);
+        canvas.drawPath(pathC2, pen2);
+      } else {
+        canvas.drawPath(pathC1, pen1);
+      }
 
       final esCircle = isCircular ? EyeStyle.circ : EyeStyle.rect;
-      _drawEye(canvas,0,0,t,pE,pI,esCircle);
-      _drawEye(canvas,(m-7)*t,0,t,pE,pI,esCircle);
-      _drawEye(canvas,0,(m-7)*t,t,pE,pI,esCircle);
+      _drawEye(canvas, 0, 0, t, pE, pI, esCircle);
+      _drawEye(canvas, (m - 7) * t, 0, t, pE, pI, esCircle);
+      _drawEye(canvas, 0, (m - 7) * t, t, pE, pI, esCircle);
     }
   }
 
-  @override bool shouldRepaint(CustomPainter o) => true;
+  @override
+  bool shouldRepaint(CustomPainter o) => true;
 }
