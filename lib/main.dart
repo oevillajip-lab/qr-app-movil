@@ -195,28 +195,166 @@ class _MainScreenState extends State<MainScreen>
     });
   }
 
+  bool _hasRealTransparency(img_lib.Image src) {
+    final total = src.width * src.height;
+    int transparentPixels = 0;
+
+    for (int y = 0; y < src.height; y++) {
+      for (int x = 0; x < src.width; x++) {
+        if (src.getPixel(x, y).a < 245) transparentPixels++;
+      }
+    }
+
+    // Si al menos 0.5% de la imagen ya tiene alpha real,
+    // asumimos que la transparencia del archivo es útil.
+    return transparentPixels > (total * 0.005);
+  }
+
+  img_lib.Image _removeEdgeBackground(img_lib.Image src) {
+    final w = src.width, h = src.height;
+
+    int sumR = 0, sumG = 0, sumB = 0, count = 0;
+
+    void sample(int x, int y) {
+      final p = src.getPixel(x, y);
+      sumR += p.r.toInt();
+      sumG += p.g.toInt();
+      sumB += p.b.toInt();
+      count++;
+    }
+
+    for (int x = 0; x < w; x++) {
+      sample(x, 0);
+      if (h > 1) sample(x, h - 1);
+    }
+    for (int y = 1; y < h - 1; y++) {
+      sample(0, y);
+      if (w > 1) sample(w - 1, y);
+    }
+
+    final double bgR = sumR / count;
+    final double bgG = sumG / count;
+    final double bgB = sumB / count;
+
+    const double tol = 68.0;
+    final double tol2 = tol * tol;
+
+    bool isBg(img_lib.Pixel p) {
+      final dr = p.r.toDouble() - bgR;
+      final dg = p.g.toDouble() - bgG;
+      final db = p.b.toDouble() - bgB;
+      final dist2 = dr * dr + dg * dg + db * db;
+
+      final nearAverage = dist2 <= tol2;
+      final nearWhite = p.r > 242 && p.g > 242 && p.b > 242;
+
+      return nearAverage || nearWhite;
+    }
+
+    final visited = List.generate(h, (_) => List.filled(w, false));
+    final queue = <List<int>>[];
+
+    void enqueue(int x, int y) {
+      if (x < 0 || x >= w || y < 0 || y >= h) return;
+      if (visited[y][x]) return;
+
+      final p = src.getPixel(x, y);
+      if (!isBg(p)) return;
+
+      visited[y][x] = true;
+      queue.add([x, y]);
+    }
+
+    for (int x = 0; x < w; x++) {
+      enqueue(x, 0);
+      enqueue(x, h - 1);
+    }
+    for (int y = 0; y < h; y++) {
+      enqueue(0, y);
+      enqueue(w - 1, y);
+    }
+
+    while (queue.isNotEmpty) {
+      final p = queue.removeLast();
+      final x = p[0], y = p[1];
+
+      enqueue(x + 1, y);
+      enqueue(x - 1, y);
+      enqueue(x, y + 1);
+      enqueue(x, y - 1);
+    }
+
+    final out = img_lib.Image(width: w, height: h, numChannels: 4);
+
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        final p = src.getPixel(x, y);
+        if (visited[y][x]) {
+          out.setPixelRgba(x, y, 0, 0, 0, 0);
+        } else {
+          out.setPixelRgba(
+            x, y,
+            p.r.toInt(), p.g.toInt(), p.b.toInt(), 255,
+          );
+        }
+      }
+    }
+
+    return out;
+  }
+
+  img_lib.Image _normalizeShapeSilhouette(img_lib.Image src) {
+    final prepared = _hasRealTransparency(src) ? src : _removeEdgeBackground(src);
+
+    final out = img_lib.Image(
+      width: prepared.width,
+      height: prepared.height,
+      numChannels: 4,
+    );
+
+    for (int y = 0; y < prepared.height; y++) {
+      for (int x = 0; x < prepared.width; x++) {
+        final p = prepared.getPixel(x, y);
+
+        // Todo lo visible pasa a silueta opaca blanca.
+        // Todo lo demás queda transparente.
+        if (p.a > 24) {
+          out.setPixelRgba(x, y, 255, 255, 255, 255);
+        } else {
+          out.setPixelRgba(x, y, 0, 0, 0, 0);
+        }
+      }
+    }
+
+    return out;
+  }
+
+  List<List<bool>> _maskFromAlpha(img_lib.Image src, {int alphaThreshold = 24}) {
+    return List.generate(
+      src.height,
+      (y) => List.generate(
+        src.width,
+        (x) => src.getPixel(x, y).a > alphaThreshold,
+      ),
+    );
+  }
+    
   Future<void> _processShape(File file) async {
     final bytes = await file.readAsBytes();
-    img_lib.Image? img = img_lib.decodeImage(bytes);
-    if (img == null) return;
-    img = img.convert(numChannels: 4);
-    final ext = file.path.toLowerCase();
-    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
-    final w = img.width, h = img.height;
-    final rB = List.generate(h, (_) => List.filled(w, false));
-    for (int y = 0; y < h; y++) {
-      int fx = -1, lx = -1;
-      for (int x = 0; x < w; x++) if (img.getPixel(x,y).a > 30) { if (fx==-1) fx=x; lx=x; }
-      if (fx != -1) for (int x = fx; x <= lx; x++) rB[y][x] = true;
-    }
-    final mask = List.generate(h, (_) => List.filled(w, false));
-    for (int x = 0; x < w; x++) {
-      int fy = -1, ly = -1;
-      for (int y = 0; y < h; y++) if (img.getPixel(x,y).a > 30) { if (fy==-1) fy=y; ly=y; }
-      if (fy != -1) for (int y = fy; y <= ly; y++) if (rB[y][x]) mask[y][x] = true;
-    }
-    final png = Uint8List.fromList(img_lib.encodePng(img));
-    setState(() { _shapeBytes = png; _shapeImage = img; _shapeMask = mask; });
+    img_lib.Image? decoded = img_lib.decodeImage(bytes);
+    if (decoded == null) return;
+
+    decoded = decoded.convert(numChannels: 4);
+
+    final silhouette = _normalizeShapeSilhouette(decoded);
+    final mask = _maskFromAlpha(silhouette);
+    final png = Uint8List.fromList(img_lib.encodePng(silhouette));
+
+    setState(() {
+      _shapeBytes = png;
+      _shapeImage = silhouette;
+      _shapeMask = mask;
+    });
   }
 
   img_lib.Image _removeWhiteBg(img_lib.Image src) {
@@ -528,92 +666,49 @@ class _MainScreenState extends State<MainScreen>
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
       if (isShape) ...[
-        // Info
         Container(
           padding: const EdgeInsets.all(12),
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-              color: const Color(0xFFE3F2FD),
-              borderRadius: BorderRadius.circular(10)),
-          child: const Row(children: [
-            Icon(Icons.info_outline, color: Color(0xFF1565C0), size: 18),
-            SizedBox(width: 8),
-            Expanded(child: Text(
-              "Sube una imagen con silueta clara. El QR tomará exactamente esa forma.",
-              style: TextStyle(fontSize: 12, color: Color(0xFF1565C0)),
-            )),
-          ]),
+            color: const Color(0xFFE3F2FD),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Color(0xFF1565C0), size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Sube una imagen con silueta clara. Se usará solo la forma; en este modo no se usa logo central.",
+                  style: TextStyle(fontSize: 12, color: Color(0xFF1565C0)),
+                ),
+              ),
+            ],
+          ),
         ),
 
-        // Botón silueta
         ElevatedButton.icon(
-            onPressed: () async {
-              final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-              if (img != null) await _processShape(File(img.path));
-            },
-            icon: const Icon(Icons.format_shapes),
-            label: Text(_shapeBytes == null
+          onPressed: () async {
+            final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+            if (img != null) await _processShape(File(img.path));
+          },
+          icon: const Icon(Icons.format_shapes),
+          label: Text(
+            _shapeBytes == null
                 ? "CARGAR FORMA / SILUETA"
-                : "✅ FORMA CARGADA — Cambiar"),
-            style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 52),
-                backgroundColor: const Color(0xFF1565C0),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)))),
-
-        const SizedBox(height: 12),
-
-        // Botón logo central
-        ElevatedButton.icon(
-            onPressed: () async {
-              final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-              if (img != null) await _processLogo(File(img.path));
-            },
-            icon: const Icon(Icons.image),
-            label: Text(_logoBytes == null
-                ? "LOGO CENTRAL (OPCIONAL)"
-                : "✅ LOGO CARGADO — Cambiar"),
-            style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 52),
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)))),
-
-        if (_logoBytes != null) ...[
-          const SizedBox(height: 10),
-          Row(children: [
-            Text("Tamaño logo: ${effLogo.toInt()}px",
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            const Spacer(),
-            if (limited)
-              Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.orange.shade200)),
-                  child: const Text("⚠️ límite automático",
-                      style: TextStyle(fontSize: 11, color: Colors.deepOrange,
-                          fontWeight: FontWeight.w600))),
-          ]),
-          Slider(value: _logoSize, min: 30, max: 85, divisions: 11,
-              activeColor: Colors.black,
-              onChanged: (v) => setState(() => _logoSize = v)),
-          Row(children: [
-            const Text("Separación logo–QR:",
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            const Spacer(),
-            Text("${_auraSize.toStringAsFixed(1)} mód.",
-                style: const TextStyle(fontSize: 12)),
-          ]),
-          Slider(value: _auraSize, min: 1.0, max: 3.0, divisions: 4,
-              activeColor: Colors.black,
-              onChanged: (v) => setState(() => _auraSize = v)),
-        ],
-
+                : "✅ FORMA CARGADA — Cambiar",
+          ),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 52),
+            backgroundColor: const Color(0xFF1565C0),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ] else ...[
+          
         ElevatedButton.icon(
             onPressed: () async {
               final img = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -668,6 +763,7 @@ class _MainScreenState extends State<MainScreen>
   Widget _qrPreview(String data, bool isEmpty, String estilo,
       bool isAdv, double effLogo) {
     final isShape    = estilo == "Formas (Máscara)";
+    final shapeReady = _shapeMask != null && _shapeMask!.isNotEmpty;  
     final isAdvStyle = isAdv && (estilo == "QR Circular" ||
         estilo == "Split Liquid (Mitades)" || isShape);
     final bgColor = _bgMode == "Transparente"
@@ -688,47 +784,80 @@ class _MainScreenState extends State<MainScreen>
               blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: Center(
-          child: isEmpty
-              ? Column(mainAxisAlignment: MainAxisAlignment.center, children: const [
-                  Icon(Icons.qr_code_2, size: 56, color: Colors.black12),
-                  SizedBox(height: 8),
-                  Text("Esperando contenido...",
-                      style: TextStyle(color: Colors.grey, fontSize: 14)),
-                ])
-              : Stack(alignment: Alignment.center, children: [
-                  CustomPaint(
-                    size: const Size(270, 270),
-                    painter: isAdvStyle
-                        ? QrAdvancedPainter(
-                            data: data, estiloAvanzado: estilo,
-                            mapSubStyle: _mapSubStyle,
-                            logoImage: _logoImage, outerMask: _outerMask,
-                            shapeImage: _shapeImage, shapeMask: _shapeMask,
-                            logoSize: effLogo, auraSize: _auraSize,
-                            qrC1: _qrC1, qrC2: _qrC2,
-                            qrMode: _qrColorMode, qrDir: _qrGradDir,
-                            customEyes: _customEyes,
-                            eyeExt: _eyeExt, eyeInt: _eyeInt)
-                        : QrMasterPainter(
-                            data: data, estilo: estilo,
-                            logoImage: _logoImage, outerMask: _outerMask,
-                            logoSize: effLogo, auraSize: _auraSize,
-                            qrC1: _qrC1, qrC2: _qrC2,
-                            qrMode: _qrColorMode, qrDir: _qrGradDir,
-                            customEyes: _customEyes,
-                            eyeExt: _eyeExt, eyeInt: _eyeInt),
+  child: isEmpty
+      ? Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.qr_code_2, size: 56, color: Colors.black12),
+            SizedBox(height: 8),
+            Text(
+              "Esperando contenido...",
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+          ],
+        )
+      : (isShape && !shapeReady)
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.format_shapes, size: 52, color: Colors.black26),
+                SizedBox(height: 10),
+                Text(
+                  "Carga una silueta para usar el modo Formas",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                ),
+              ],
+            )
+          : Stack(
+              alignment: Alignment.center,
+              children: [
+                CustomPaint(
+                  size: const Size(270, 270),
+                  painter: isAdvStyle
+                      ? QrAdvancedPainter(
+                          data: data,
+                          estiloAvanzado: estilo,
+                          mapSubStyle: _mapSubStyle,
+                          logoImage: isShape ? null : _logoImage,
+                          outerMask: isShape ? null : _outerMask,
+                          shapeImage: _shapeImage,
+                          shapeMask: _shapeMask,
+                          logoSize: isShape ? 0.0 : effLogo,
+                          auraSize: isShape ? 0.0 : _auraSize,
+                          qrC1: _qrC1,
+                          qrC2: _qrC2,
+                          qrMode: _qrColorMode,
+                          qrDir: _qrGradDir,
+                          customEyes: _customEyes,
+                          eyeExt: _eyeExt,
+                          eyeInt: _eyeInt,
+                        )
+                      : QrMasterPainter(
+                          data: data,
+                          estilo: estilo,
+                          logoImage: _logoImage,
+                          outerMask: _outerMask,
+                          logoSize: effLogo,
+                          auraSize: _auraSize,
+                          qrC1: _qrC1,
+                          qrC2: _qrC2,
+                          qrMode: _qrColorMode,
+                          qrDir: _qrGradDir,
+                          customEyes: _customEyes,
+                          eyeExt: _eyeExt,
+                          eyeInt: _eyeInt,
+                        ),
+                ),
+                if (_logoBytes != null && !isShape)
+                  SizedBox(
+                    width: effLogo,
+                    height: effLogo,
+                    child: Image.memory(_logoBytes!, fit: BoxFit.contain),
                   ),
-                  // Logo central (todos los estilos excepto Formas — en Formas
-                  // el logo se pasa al painter para calcular exclusiones)
-                  if (_logoBytes != null && !isShape)
-                    SizedBox(width: effLogo, height: effLogo,
-                        child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
-                  // En Formas, el logo se dibuja encima del painter
-                  if (_logoBytes != null && isShape)
-                    SizedBox(width: effLogo * 0.5, height: effLogo * 0.5,
-                        child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
-                ]),
-        ),
+              ],
+            ),
+         ),
       ),
     );
   }
@@ -1103,6 +1232,105 @@ class QrAdvancedPainter extends CustomPainter {
     }
   }
 
+      List<List<bool>> _buildCanvasShapeMask(int width, int height) {
+    final canvasMask = List.generate(height, (_) => List.filled(width, false));
+
+if (shapeMask == null || shapeMask!.isEmpty || shapeMask![0].isEmpty) {
+  return canvasMask;
+}
+
+    final int sh = shapeMask!.length;
+    final int sw = shapeMask![0].length;
+
+    final double scale = math.min(width / sw, height / sh);
+    final double drawW = sw * scale;
+    final double drawH = sh * scale;
+    final double offX = (width - drawW) / 2.0;
+    final double offY = (height - drawH) / 2.0;
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final double sx = ((x + 0.5) - offX) / scale;
+        final double sy = ((y + 0.5) - offY) / scale;
+
+        if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
+          final int px = sx.floor().clamp(0, sw - 1).toInt();
+          final int py = sy.floor().clamp(0, sh - 1).toInt();
+          canvasMask[y][x] = shapeMask![py][px];
+        } else {
+          canvasMask[y][x] = false;
+        }
+      }
+    }
+
+    return canvasMask;
+  }
+
+  Rect? _findBestQrSquare(
+    List<List<bool>> canvasMask, {
+    required int minSide,
+    int step = 2,
+  }) {
+    final int h = canvasMask.length;
+    if (h == 0) return null;
+    final int w = canvasMask[0].length;
+    if (w == 0) return null;
+
+    final prefix = List.generate(h + 1, (_) => List.filled(w + 1, 0));
+
+    for (int y = 0; y < h; y++) {
+      int rowAcc = 0;
+      for (int x = 0; x < w; x++) {
+        rowAcc += canvasMask[y][x] ? 1 : 0;
+        prefix[y + 1][x + 1] = prefix[y][x + 1] + rowAcc;
+      }
+    }
+
+    int areaSum(int left, int top, int side) {
+      final int right = left + side;
+      final int bottom = top + side;
+      return prefix[bottom][right]
+          - prefix[top][right]
+          - prefix[bottom][left]
+          + prefix[top][left];
+    }
+
+    final int maxSide = math.min(w, h);
+    final int safeMin = minSide.clamp(1, maxSide);
+
+    for (int side = maxSide; side >= safeMin; side -= step) {
+      Rect? best;
+      double bestDist = double.infinity;
+
+      for (int top = 0; top <= h - side; top += step) {
+        for (int left = 0; left <= w - side; left += step) {
+          final int filled = areaSum(left, top, side);
+          if (filled != side * side) continue;
+
+          final double cx = left + side / 2.0;
+          final double cy = top + side / 2.0;
+          final double dx = cx - w / 2.0;
+          final double dy = cy - h / 2.0;
+          final double dist = dx * dx + dy * dy;
+
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = Rect.fromLTWH(
+              left.toDouble(),
+              top.toDouble(),
+              side.toDouble(),
+              side.toDouble(),
+            );
+          }
+        }
+      }
+
+      if (best != null) return best;
+    }
+
+    return null;
+  }  
+
   @override
   void paint(Canvas canvas, Size size) {
     final qr = _buildQrImage(data);
@@ -1148,50 +1376,267 @@ class QrAdvancedPainter extends CustomPainter {
     // MODO FORMAS (Máscara de Silueta)
     // ════════════════════════════════════════════════════════════
     if (isShape) {
-      // ─────────────────────────────────────────────────────────
-      // ALGORITMO:
-      //
-      // 1. Proyectar la grilla del QR (m×m módulos) sobre la
-      //    imagen de silueta normalizada (0..1 × 0..1).
-      //
-      // 2. Para cada módulo oscuro del QR:
-      //    - Si cae DENTRO de la silueta → dibuja con el estilo elegido
-      //    - Si cae FUERA de la silueta  → ghost-dot 0xF2F2F2
-      //      (scanner lo lee como "blanco" = sin dato → QR intacto)
-      //
-      // 3. Los 3 ojos del QR se dibujan SIEMPRE en sus posiciones
-      //    de grilla fijas, con fondo blanco local para garantizar
-      //    visibilidad aunque la silueta los cubra.
-      //
-      // 4. Logo central opcional se dibuja encima (en _qrPreview).
-      //
-      // RESULTADO: El contorno visual del QR = la silueta subida.
-      //            El scanner lee el QR completo (ghost=blanco).
-      //            Los ojos siempre son reconocibles.
-      // ─────────────────────────────────────────────────────────
+      final int maskW = math.max(size.width.round(), 1);
+      final int maskH = math.max(size.height.round(), 1);
+      final canvasMask = _buildCanvasShapeMask(maskW, maskH);
 
-      // Paso 1: Construir máscara inShape[r][c] por módulo
-      final inShape = List.generate(m, (_) => List.filled(m, false));
+      bool insideShapePoint(double px, double py) {
+        final int x = px.floor().clamp(0, maskW - 1).toInt();
+        final int y = py.floor().clamp(0, maskH - 1).toInt();
+        return canvasMask[y][x];
+      }
 
-      if (shapeImage != null && shapeMask != null) {
-        final sw = shapeImage!.width;
-        final sh = shapeImage!.height;
-        for (int r = 0; r < m; r++) {
-          for (int c = 0; c < m; c++) {
-            int hits = 0;
-            // Muestrear 9 puntos por módulo (3×3)
-            for (double dy = 0.15; dy <= 0.85; dy += 0.35) {
-              for (double dx = 0.15; dx <= 0.85; dx += 0.35) {
-                final nx = (c + dx) / m;
-                final ny = (r + dy) / m;
-                final px = (nx * sw).floor().clamp(0, sw-1);
-                final py = (ny * sh).floor().clamp(0, sh-1);
-                if (shapeMask![py][px]) hits++;
-              }
-            }
-            inShape[r][c] = hits >= 3; // 3 de 9 = umbral 33%
+      bool rectWellInsideShape(Rect rect) {
+        const probes = [0.18, 0.50, 0.82];
+        for (final py in probes) {
+          for (final px in probes) {
+            final sx = rect.left + rect.width * px;
+            final sy = rect.top + rect.height * py;
+            if (!insideShapePoint(sx, sy)) return false;
           }
         }
+        return true;
+      }
+
+      void drawDecorCell(Rect rect, int rr, int cc) {
+        final double x = rect.left;
+        final double y = rect.top;
+        final double cell = rect.width;
+        final double cx = rect.center.dx;
+        final double cy = rect.center.dy;
+
+        if (mapSubStyle.contains("Barras")) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(
+                x + cell * 0.22,
+                y + cell * 0.06,
+                cell * 0.56,
+                cell * 0.88,
+              ),
+              Radius.circular(cell * 0.28),
+            ),
+            solidPaint,
+          );
+        } else if (mapSubStyle.contains("Puntos")) {
+          final double h = ((rr * 13 + cc * 29) % 100) / 100.0;
+          canvas.drawCircle(
+            Offset(cx, cy),
+            cell * (0.28 + 0.10 * h),
+            solidPaint,
+          );
+        } else if (mapSubStyle.contains("Diamantes")) {
+          final double h = ((rr * 17 + cc * 31) % 100) / 100.0;
+          final double sc = 0.62 + 0.22 * h;
+          final double off = cell * (1 - sc) / 2;
+          canvas.drawPath(
+            Path()
+              ..moveTo(cx, y + off)
+              ..lineTo(x + cell - off, cy)
+              ..lineTo(cx, y + cell - off)
+              ..lineTo(x + off, cy)
+              ..close(),
+            solidPaint,
+          );
+        } else if (mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid")) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(
+                x + cell * 0.10,
+                y + cell * 0.10,
+                cell * 0.80,
+                cell * 0.80,
+              ),
+              Radius.circular(cell * 0.40),
+            ),
+            solidPaint,
+          );
+        } else {
+          canvas.drawRect(
+            Rect.fromLTWH(x, y, cell + 0.2, cell + 0.2),
+            solidPaint,
+          );
+        }
+      }
+
+      void drawDecorSilhouette({Rect? reservedRect}) {
+        final double probeSide = reservedRect != null
+            ? reservedRect.width / (m + 4.0)
+            : size.width / (m + 6.0);
+
+        final double decoT = probeSide.clamp(4.0, 14.0);
+        final int cols = (size.width / decoT).ceil();
+        final int rows = (size.height / decoT).ceil();
+
+        for (int rr = 0; rr < rows; rr++) {
+          for (int cc = 0; cc < cols; cc++) {
+            final Rect cellRect = Rect.fromLTWH(
+              cc * decoT,
+              rr * decoT,
+              decoT,
+              decoT,
+            );
+
+            if (cellRect.right > size.width || cellRect.bottom > size.height) continue;
+            if (reservedRect != null && reservedRect.overlaps(cellRect)) continue;
+            if (!rectWellInsideShape(cellRect)) continue;
+
+            drawDecorCell(cellRect, rr, cc);
+          }
+        }
+      }
+
+      final int preferredSide = math.min(
+        math.min(maskW, maskH),
+        math.max(((m + 4) * 3.4).round(), 96),
+      );
+
+      final int relaxedSide = math.min(
+        math.min(maskW, maskH),
+        math.max(((m + 4) * 2.8).round(), 76),
+      );
+
+      Rect? qrBox = _findBestQrSquare(
+        canvasMask,
+        minSide: preferredSide,
+        step: 2,
+      );
+
+      qrBox ??= _findBestQrSquare(
+        canvasMask,
+        minSide: relaxedSide,
+        step: 2,
+      );
+
+      qrBox ??= _findBestQrSquare(
+        canvasMask,
+        minSide: 72,
+        step: 2,
+      );
+
+      if (qrBox == null) {
+        drawDecorSilhouette();
+        return;
+      }
+
+      drawDecorSilhouette(reservedRect: qrBox);
+
+      const double quietModules = 2.0;
+      final double qt = qrBox.width / (m + quietModules * 2.0);
+
+      final Rect qrDataRect = Rect.fromLTWH(
+        qrBox.left + qt * quietModules,
+        qrBox.top + qt * quietModules,
+        qt * m,
+        qt * m,
+      );
+
+      final qrLiquidPen = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = qt
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
+      if (grad != null) {
+        qrLiquidPen.shader = grad;
+      } else {
+        qrLiquidPen.color = qrC1;
+      }
+
+      bool darkOk(int r, int c) {
+        if (r < 0 || r >= m || c < 0 || c >= m) return false;
+        if (!qr.isDark(r, c)) return false;
+        if (_isEye(r, c, m)) return false;
+        return true;
+      }
+
+      final bool isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+      final bool isBars = mapSubStyle.contains("Barras");
+      final bool isDots = mapSubStyle.contains("Puntos");
+      final bool isDiamonds = mapSubStyle.contains("Diamantes");
+
+      final qrPath = Path();
+
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!darkOk(r, c)) continue;
+
+          final double x = qrDataRect.left + c * qt;
+          final double y = qrDataRect.top + r * qt;
+          final double cx = x + qt / 2;
+          final double cy = y + qt / 2;
+
+          if (isLiquid) {
+            qrPath.moveTo(cx, cy);
+            qrPath.lineTo(cx, cy);
+
+            if (darkOk(r, c + 1)) {
+              qrPath.moveTo(cx, cy);
+              qrPath.lineTo(cx + qt, cy);
+            }
+
+            if (darkOk(r + 1, c)) {
+              qrPath.moveTo(cx, cy);
+              qrPath.lineTo(cx, cy + qt);
+            }
+          } else if (isBars) {
+            if (r == 0 || !darkOk(r - 1, c)) {
+              int er = r;
+              while (er + 1 < m && darkOk(er + 1, c)) {
+                er++;
+              }
+
+              canvas.drawRRect(
+                RRect.fromRectAndRadius(
+                  Rect.fromLTWH(
+                    x + qt * 0.10,
+                    y,
+                    qt * 0.80,
+                    (er - r + 1) * qt,
+                  ),
+                  Radius.circular(qt * 0.38),
+                ),
+                solidPaint,
+              );
+            }
+          } else if (isDots) {
+            final double h = ((r * 13 + c * 29) % 100) / 100.0;
+            canvas.drawCircle(
+              Offset(cx, cy),
+              qt * (0.32 + 0.14 * h),
+              solidPaint,
+            );
+          } else if (isDiamonds) {
+            final double h = ((r * 17 + c * 31) % 100) / 100.0;
+            final double sc = 0.65 + 0.22 * h;
+            final double off = qt * (1 - sc) / 2;
+
+            canvas.drawPath(
+              Path()
+                ..moveTo(cx, y + off)
+                ..lineTo(x + qt - off, cy)
+                ..lineTo(cx, y + qt - off)
+                ..lineTo(x + off, cy)
+                ..close(),
+              solidPaint,
+            );
+          } else {
+            canvas.drawRect(
+              Rect.fromLTWH(x, y, qt + 0.2, qt + 0.2),
+              solidPaint,
+            );
+          }
+        }
+      }
+
+      if (isLiquid) {
+        canvas.drawPath(qrPath, qrLiquidPen);
+      }
+
+      _drawEye(canvas, qrDataRect.left, qrDataRect.top, qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.right - 7 * qt, qrDataRect.top, qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
       } else {
         // Sin silueta: modo fallback (dibuja todo)
         for (int r=0; r<m; r++) for (int c=0; c<m; c++) inShape[r][c] = true;
