@@ -502,17 +502,16 @@ class _MainScreenState extends State<MainScreen>
                               style: style, c1: _qrC1, c2: _qrC2),
                         ),
                       ),
-                      // Logo o placeholder "LOGO" limpio (sin recuadro)
-                      if (_logoBytes != null)
-                        SizedBox(width: 24, height: 24,
-                            child: Image.memory(_logoBytes!, fit: BoxFit.contain))
-                      else
-                        const Text("LOGO",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900,
-                                color: Colors.black, letterSpacing: 0.5)),
-                        ),
-                    ]),
+                     // Logo o placeholder "LOGO" limpio (sin recuadro)
+                              if (_logoBytes != null)
+                                SizedBox(width: 24, height: 24,
+                                    child: Image.memory(_logoBytes!, fit: BoxFit.contain))
+                              else
+                                const Text("LOGO",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900,
+                                        color: Colors.black, letterSpacing: 0.5)),
+                            ]),
                   ),
                 ),
                 Container(
