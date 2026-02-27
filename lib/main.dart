@@ -679,9 +679,10 @@ class _MainScreenState extends State<MainScreen>
                     painter: isAdvStyle
                         ? QrAdvancedPainter(
                             data: data, estiloAvanzado: estilo,
+                            mapSubStyle: _mapSubStyle, // LE ENVIAMOS LA ORDEN AL PINTOR
                             logoImage: _logoImage, outerMask: _outerMask,
-                            shapeImage: _shapeImage, shapeMask: _shapeMask, // NUEVO: Mandamos la forma
-                            logoSize: effLogo, shapeSize: _logoSizeMap,     // NUEVO: Tamaño separado
+                            shapeImage: _shapeImage, shapeMask: _shapeMask,
+                            logoSize: effLogo, shapeSize: _logoSizeMap,
                             auraSize: _auraSize,
                             qrC1: _qrC1, qrC2: _qrC2,
                             qrMode: _qrColorMode, qrDir: _qrGradDir,
@@ -696,7 +697,6 @@ class _MainScreenState extends State<MainScreen>
                             customEyes: _customEyes,
                             eyeExt: _eyeExt, eyeInt: _eyeInt),
                   ),
-                  // Renderizamos la imagen del logo central siempre que exista (incluso en mapa)
                   if (_logoBytes != null)
                     SizedBox(width: effLogo, height: effLogo,
                         child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
@@ -1196,7 +1196,7 @@ class QrMasterPainter extends CustomPainter {
 // QR ADVANCED PAINTER — estilos avanzados
 // ═══════════════════════════════════════════════════════════════════
 class QrAdvancedPainter extends CustomPainter {
-  final String data, estiloAvanzado, qrMode, qrDir;
+  final String data, estiloAvanzado, mapSubStyle, qrMode, qrDir;
   final img_lib.Image? logoImage, shapeImage;
   final List<List<bool>>? outerMask, shapeMask;
   final double logoSize, shapeSize, auraSize;
@@ -1204,7 +1204,7 @@ class QrAdvancedPainter extends CustomPainter {
   final Color qrC1, qrC2, eyeExt, eyeInt;
 
   const QrAdvancedPainter({
-    required this.data, required this.estiloAvanzado,
+    required this.data, required this.estiloAvanzado, required this.mapSubStyle,
     required this.logoImage, required this.outerMask,
     required this.shapeImage, required this.shapeMask,
     required this.logoSize, required this.shapeSize, required this.auraSize,
@@ -1216,13 +1216,12 @@ class QrAdvancedPainter extends CustomPainter {
   bool _isEye(int r, int c, int m) =>
       (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
 
-  // Escudo protector vital para la lectura
   bool _isProtected(int r, int c, int m) {
-    if (r <= 8 && c <= 8) return true; 
-    if (r <= 8 && c >= m - 9) return true; 
-    if (r >= m - 9 && c <= 8) return true; 
-    if (r == 6 || c == 6) return true; // Líneas conectoras
-    if (m > 21) { // Patrón de alineación
+    if (r <= 8 && c <= 8) return true;
+    if (r <= 8 && c >= m - 9) return true;
+    if (r >= m - 9 && c <= 8) return true;
+    if (r == 6 || c == 6) return true;
+    if (m > 21) {
       int align = m - 7;
       if (r >= align - 3 && r <= align + 3 && c >= align - 3 && c <= align + 3) return true;
     }
@@ -1255,10 +1254,12 @@ class QrAdvancedPainter extends CustomPainter {
     if (grad!=null) pen1.shader=grad; else pen1.color=qrC1;
     final pen2 = Paint()..isAntiAlias=true..color=qrC2..style=PaintingStyle.stroke
         ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+    
+    final paintSolid = Paint()..isAntiAlias=true;
+    if (grad!=null) paintSolid.shader=grad; else paintSolid.color=qrC1;
 
     final excl = List.generate(m, (_) => List.filled(m, false));
 
-    // 1. Calcular el HUECO (Aura) del logo central
     if (logoImage != null && outerMask != null) {
       final lf=effLogo/270.0, ls=(1-lf)/2.0, le=ls+lf;
       final base=List.generate(m,(_)=>List.filled(m,false));
@@ -1283,7 +1284,6 @@ class QrAdvancedPainter extends CustomPainter {
         }
     }
 
-    // 2. Calcular la SILUETA externa del Mapa
     final mapMask = List.generate(m, (_) => List.filled(m, false));
     if (isMap && shapeImage != null && shapeMask != null) {
       final lf=shapeSize/270.0, ls=(1-lf)/2.0, le=ls+lf;
@@ -1301,61 +1301,100 @@ class QrAdvancedPainter extends CustomPainter {
       if (r<0||r>=m||c<0||c>=m) return false;
       if (!qr.isDark(r,c)) return false;
       if (_isEye(r,c,m)) return false; 
-      
-      // Siempre respetar el hueco del logo (el aura)
       if (excl[r][c]) return false;
-      
       if (estiloAvanzado=="QR Circular") {
         if (math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2)) > m/2.1) return false;
       }
-      
-      // Limitar a la silueta del Mapa (protegiendo esquinas)
       if (isMap && shapeImage != null) {
         if (!mapMask[r][c] && !_isProtected(r, c, m)) return false;
       }
-      
       return true;
     }
 
+    // Aquí está la magia: Decidimos el estilo interno
+    String estiloActual = estiloAvanzado;
+    if (isMap) estiloActual = mapSubStyle;
+
     final pathC1=Path(), pathC2=Path();
+    
     for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
       if (!ok(r,c)) continue;
       final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
-      if (estiloAvanzado=="Split Liquid (Mitades)") {
-        final left=c<m/2;
-        final ap=left?pathC1:pathC2;
-        ap.moveTo(cx,cy); ap.lineTo(cx,cy);
-        if (ok(r,c+1)&&((c+1<m/2)==left)) { ap.moveTo(cx,cy); ap.lineTo(cx+t,cy); }
-        if (ok(r+1,c)) { ap.moveTo(cx,cy); ap.lineTo(cx,cy+t); }
+
+      if (estiloActual.contains("Puntos")) {
+        canvas.drawCircle(Offset(cx, cy), t*0.4, paintSolid);
+      } else if (estiloActual.contains("Diamantes")) {
+        canvas.drawPath(Path()
+          ..moveTo(cx, y)..lineTo(x+t, cy)..lineTo(cx, y+t)..lineTo(x, cy)..close(), paintSolid);
+      } else if (estiloActual.contains("Barras")) {
+        if (r==0||!ok(r-1,c)) {
+          int er=r; while(er+1<m&&ok(er+1,c)) er++;
+          canvas.drawRRect(RRect.fromRectAndRadius(
+              Rect.fromLTWH(x+t*0.1,y,t*0.8,(er-r+1)*t),
+              Radius.circular(t*0.38)), paintSolid);
+        }
+      } else if (estiloActual.contains("Normal")) {
+        canvas.drawRect(Rect.fromLTWH(x,y,t+0.3,t+0.3), paintSolid);
       } else {
-        pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
-        if (ok(r,c+1)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
-        if (ok(r+1,c)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
+        if (estiloAvanzado=="Split Liquid (Mitades)") {
+          final left=c<m/2;
+          final ap=left?pathC1:pathC2;
+          ap.moveTo(cx,cy); ap.lineTo(cx,cy);
+          if (ok(r,c+1)&&((c+1<m/2)==left)) { ap.moveTo(cx,cy); ap.lineTo(cx+t,cy); }
+          if (ok(r+1,c)) { ap.moveTo(cx,cy); ap.lineTo(cx,cy+t); }
+        } else {
+          pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
+          if (ok(r,c+1)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
+          if (ok(r+1,c)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
+        }
       }
     }
-    if (estiloAvanzado=="Split Liquid (Mitades)") {
-      canvas.drawPath(pathC1,pen1);
-      canvas.drawPath(pathC2,pen2);
-    } else {
-      canvas.drawPath(pathC1,pen1);
+    
+    if (estiloActual.contains("Gusano") || estiloAvanzado=="QR Circular" || estiloAvanzado=="Split Liquid (Mitades)") {
+      if (estiloAvanzado=="Split Liquid (Mitades)") {
+        canvas.drawPath(pathC1,pen1);
+        canvas.drawPath(pathC2,pen2);
+      } else {
+        canvas.drawPath(pathC1,pen1);
+      }
     }
 
-    // Ojos
     final pE=Paint()..isAntiAlias=true;
     final pI=Paint()..isAntiAlias=true;
     if (customEyes) { pE.color=eyeExt; pI.color=eyeInt; }
     else if (grad!=null) { pE.shader=grad; pI.shader=grad; }
     else { pE.color=qrC1; pI.color=qrC1; }
+    
+    EyeStyle es = EyeStyle.rect;
+    if (estiloActual.contains("Puntos")) es = EyeStyle.circ;
+    if (estiloActual.contains("Diamantes")) es = EyeStyle.diamond;
+    
     void eye(double x, double y) {
       final s=7*t;
-      canvas.drawPath(Path()
+      if (es == EyeStyle.circ) {
+        canvas.drawPath(Path()
           ..addOval(Rect.fromLTWH(x,y,s,s))
           ..addOval(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
           ..fillType=PathFillType.evenOdd, pE);
-      canvas.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
+        canvas.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
+      } else if (es == EyeStyle.diamond) {
+        double ecx=x+3.5*t, ecy=y+3.5*t;
+        canvas.drawPath(Path()
+          ..moveTo(ecx,y)..lineTo(x+7*t,ecy)..lineTo(ecx,y+7*t)..lineTo(x,ecy)
+          ..moveTo(ecx,y+1.2*t)..lineTo(x+5.8*t,ecy)..lineTo(ecx,y+5.8*t)..lineTo(x+1.2*t,ecy)
+          ..fillType=PathFillType.evenOdd, pE);
+        canvas.drawPath(Path()
+          ..moveTo(ecx,y+2.2*t)..lineTo(x+4.8*t,ecy)
+          ..lineTo(ecx,y+4.8*t)..lineTo(x+2.2*t,ecy)..close(), pI);
+      } else {
+        canvas.drawPath(Path()
+          ..addRect(Rect.fromLTWH(x,y,s,s))
+          ..addRect(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
+          ..fillType=PathFillType.evenOdd, pE);
+        canvas.drawRect(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.4*t), pI);
+      }
     }
     eye(0,0); eye((m-7)*t,0); eye(0,(m-7)*t);
   }
-
   @override bool shouldRepaint(CustomPainter o) => true;
 }
