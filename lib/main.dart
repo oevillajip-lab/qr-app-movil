@@ -1216,7 +1216,9 @@ class QrAdvancedPainter extends CustomPainter {
     if (qr == null) return;
     final int m = qr.moduleCount;
     final double t = size.width / m;
-    final bool isShape = estiloAvanzado == "Forma Personalizada";
+    
+    // TRUCO A PRUEBA DE FALLOS: Si la palabra dice "Forma" o "Mapa", lo activamos sí o sí.
+    final bool isShape = estiloAvanzado.contains("Forma") || estiloAvanzado.contains("Mapa");
 
     ui.Shader? grad;
     if (qrMode == "Degradado Custom") {
@@ -1228,9 +1230,6 @@ class QrAdvancedPainter extends CustomPainter {
           Offset(size.width*(e.x+1)/2, size.height*(e.y+1)/2), [qrC1, qrC2]);
     }
 
-    final pen1 = Paint()..isAntiAlias=true..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
-    if (grad!=null) pen1.shader=grad; else pen1.color=qrC1;
-    final pen2 = Paint()..isAntiAlias=true..color=qrC2..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
     final paintSolid = Paint()..isAntiAlias=true;
     if (grad!=null) paintSolid.shader=grad; else paintSolid.color=qrC1;
 
@@ -1240,28 +1239,31 @@ class QrAdvancedPainter extends CustomPainter {
     else if (grad!=null) { pE.shader=grad; pI.shader=grad; }
     else { pE.color=qrC1; pI.color=qrC1; }
 
-    // ────────────────────────────────────────────────────────────────
-    // ESTRATEGIA "CAMUFLAJE" (Estilo EE.UU.)
-    // ────────────────────────────────────────────────────────────────
     if (isShape && shapeImage != null && shapeMask != null) {
+      // ==========================================================
+      // MODO EE.UU: CAMUFLAJE DE FORMA CON QR EN EL CENTRO
+      // ==========================================================
       
-      // 1. DIBUJAR LA SILUETA COMO "RUIDO DE FONDO"
-      int decoM = 55; // Densidad del camuflaje
-      double dt = size.width / decoM;
-      double realQrSize = size.width * 0.55; // El QR real ocupa el 55% del centro
+      double realQrSize = size.width * 0.55; // QR al 55% en el medio
       double offset = (size.width - realQrSize) / 2.0;
-      Rect qrZone = Rect.fromLTWH(offset - 4, offset - 4, realQrSize + 8, realQrSize + 8);
+      Rect qrZone = Rect.fromLTWH(offset - 6, offset - 6, realQrSize + 12, realQrSize + 12);
 
+      // 1. DIBUJAR LA SILUETA (RUIDO DE FONDO PARA CAMUFLAJE)
+      int decoM = 50; 
+      double dt = size.width / decoM;
       final lf = shapeSize / 270.0;
-      final ls = (1 - lf) / 2.0;
-      final le = ls + lf;
+      final ls = (1 - lf) / 2.0, le = ls + lf;
+      
+      final pathNoise = Path();
+      final penNoise = Paint()..isAntiAlias=true..style=PaintingStyle.stroke..strokeWidth=dt..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+      if (grad!=null) penNoise.shader=grad; else penNoise.color=qrC1;
 
       for (int r = 0; r < decoM; r++) {
         for (int c = 0; c < decoM; c++) {
           double x = c * dt, y = r * dt;
           double cx = x + dt / 2, cy = y + dt / 2;
-
-          if (qrZone.contains(Offset(cx, cy))) continue; // Hueco para el QR de verdad
+          
+          if (qrZone.contains(Offset(cx, cy))) continue;
 
           final nx = (c + 0.5) / decoM, ny = (r + 0.5) / decoM;
           if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
@@ -1269,49 +1271,56 @@ class QrAdvancedPainter extends CustomPainter {
             final py = ((ny - ls) / lf * shapeImage!.height).clamp(0, shapeImage!.height - 1).toInt();
             
             if (shapeMask![py][px]) {
-              // Simular datos QR dispersos (~60% de puntos)
-              if ((r * 17 + c * 31) % 100 > 40) {
-                if (mapSubStyle.contains("Puntos")) canvas.drawCircle(Offset(cx, cy), dt * 0.4, paintSolid);
-                else if (mapSubStyle.contains("Diamantes")) canvas.drawPath(Path()..moveTo(cx, y)..lineTo(x+dt, cy)..lineTo(cx, y+dt)..lineTo(x, cy)..close(), paintSolid);
-                else canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, dt+0.2, dt+0.2), Radius.circular(dt*0.3)), paintSolid);
+              bool drawMe = (r * 17 + c * 31) % 100 > 45; // Genera puntitos aleatorios
+              if (drawMe) {
+                if (mapSubStyle.contains("Puntos")) {
+                  canvas.drawCircle(Offset(cx, cy), dt * 0.4, paintSolid);
+                } else if (mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid")) {
+                  pathNoise.moveTo(cx, cy); pathNoise.lineTo(cx, cy);
+                  if ((r * 13 + (c+1) * 29) % 100 > 45) { pathNoise.moveTo(cx, cy); pathNoise.lineTo(cx + dt, cy); }
+                  if (((r+1) * 13 + c * 29) % 100 > 45) { pathNoise.moveTo(cx, cy); pathNoise.lineTo(cx, cy + dt); }
+                } else {
+                  canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, dt, dt), Radius.circular(dt*0.2)), paintSolid);
+                }
               }
             }
           }
         }
       }
+      if (mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid")) {
+         canvas.drawPath(pathNoise, penNoise);
+      }
 
-      // 2. PROTECCIÓN CENTRAL (Fondo blanco detrás del QR para que se lea perfecto)
-      canvas.drawRRect(RRect.fromRectAndRadius(qrZone, const Radius.circular(8)), Paint()..color = Colors.white);
+      // 2. FONDO BLANCO PROTECTOR PARA QUE EL QR SEA LEGIBLE
+      canvas.drawRRect(RRect.fromRectAndRadius(qrZone, const Radius.circular(12)), Paint()..color = Colors.white);
 
-      // 3. DIBUJAR EL CÓDIGO QR REAL (Pequeño, centrado y 100% legible)
+      // 3. EL QR DE VERDAD EN EL CENTRO
       double qt = realQrSize / m;
       
-      // Hueco para el logo central (adaptado a la nueva escala reducida)
+      // Hueco del logo central si lo subes
       final excl = List.generate(m, (_) => List.filled(m, false));
       if (logoImage != null && outerMask != null) {
-        final llf = logoSize / realQrSize;
+        final llf = (logoSize * 0.5) / realQrSize; 
         final lls = (1 - llf) / 2.0, lle = lls + llf;
-        final base = List.generate(m, (_) => List.filled(m, false));
         for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
-          bool hit = false;
-          for (double dy=0.2; dy<=0.8&&!hit; dy+=0.3)
-            for (double dx=0.2; dx<=0.8&&!hit; dx+=0.3) {
-              final nx = (c+dx)/m, ny = (r+dy)/m;
-              if (nx>=lls && nx<=lle && ny>=lls && ny<=lle) {
-                final px = ((nx-lls)/llf * logoImage!.width).clamp(0, logoImage!.width-1).toInt();
-                final py = ((ny-lls)/llf * logoImage!.height).clamp(0, logoImage!.height-1).toInt();
-                if (outerMask![py][px]) hit = true;
-              }
-            }
-          if (hit) base[r][c] = true;
+          final nx = (c+0.5)/m, ny = (r+0.5)/m;
+          if (nx>=lls && nx<=lle && ny>=lls && ny<=lle) excl[r][c] = true;
         }
         final ar = auraSize.toInt();
-        for (int r=0; r<m; r++) for (int c=0; c<m; c++)
-          if (base[r][c]) for (int dr=-ar; dr<=ar; dr++) for (int dc=-ar; dc<=ar; dc++) {
-            final nr=r+dr, nc=c+dc;
-            if (nr>=0 && nr<m && nc>=0 && nc<m) excl[nr][nc] = true;
-          }
+        final base = List.generate(m, (i) => List<bool>.from(excl[i]));
+        for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
+           if (base[r][c]) {
+              for (int dr=-ar; dr<=ar; dr++) for (int dc=-ar; dc<=ar; dc++) {
+                final nr=r+dr, nc=c+dc;
+                if (nr>=0 && nr<m && nc>=0 && nc<m) excl[nr][nc] = true;
+              }
+           }
+        }
       }
+
+      final pathQr = Path();
+      final penQr = Paint()..isAntiAlias=true..style=PaintingStyle.stroke..strokeWidth=qt..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+      if (grad!=null) penQr.shader=grad; else penQr.color=qrC1;
 
       for (int r = 0; r < m; r++) {
         for (int c = 0; c < m; c++) {
@@ -1321,10 +1330,16 @@ class QrAdvancedPainter extends CustomPainter {
 
           if (mapSubStyle.contains("Puntos")) {
             canvas.drawCircle(Offset(cx, cy), qt * 0.4, paintSolid);
-          } else if (mapSubStyle.contains("Diamantes")) {
-            canvas.drawPath(Path()..moveTo(cx, y)..lineTo(x+qt, cy)..lineTo(cx, y+qt)..lineTo(x, cy)..close(), paintSolid);
+          } else if (mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid")) {
+            pathQr.moveTo(cx, cy); pathQr.lineTo(cx, cy);
+            if (c+1<m && qr.isDark(r,c+1) && !_isEye(r,c+1,m) && !excl[r][c+1]) {
+              pathQr.moveTo(cx, cy); pathQr.lineTo(cx + qt, cy);
+            }
+            if (r+1<m && qr.isDark(r+1,c) && !_isEye(r+1,c,m) && !excl[r+1][c]) {
+              pathQr.moveTo(cx, cy); pathQr.lineTo(cx, cy + qt);
+            }
           } else if (mapSubStyle.contains("Barras")) {
-            if (r==0||!qr.isDark(r-1,c)||_isEye(r-1,c,m)||excl[r-1][c]) {
+             if (r==0||!qr.isDark(r-1,c)||_isEye(r-1,c,m)||excl[r-1][c]) {
               int er=r; while(er+1<m&&qr.isDark(er+1,c)&&!_isEye(er+1,c,m)&&!excl[er+1][c]) er++;
               canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x+qt*0.1,y,qt*0.8,(er-r+1)*qt), Radius.circular(qt*0.38)), paintSolid);
             }
@@ -1333,85 +1348,52 @@ class QrAdvancedPainter extends CustomPainter {
           }
         }
       }
+      if (mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid")) {
+        canvas.drawPath(pathQr, penQr);
+      }
 
-      // 4. OJOS DEL QR CENTRAL
+      // 4. OJOS DEL QR (Escalados para el centro)
       EyeStyle es = EyeStyle.rect;
       if (mapSubStyle.contains("Puntos")) es = EyeStyle.circ;
       if (mapSubStyle.contains("Diamantes")) es = EyeStyle.diamond;
       
-      void drawSmallEye(double x, double y) {
+      void drawEye(double x, double y) {
         final s = 7 * qt;
         if (es == EyeStyle.circ) {
           canvas.drawPath(Path()..addOval(Rect.fromLTWH(x,y,s,s))..addOval(Rect.fromLTWH(x+qt,y+qt,s-2*qt,s-2*qt))..fillType=PathFillType.evenOdd, pE);
           canvas.drawOval(Rect.fromLTWH(x+2.1*qt,y+2.1*qt,s-4.2*qt,s-4.2*qt), pI);
-        } else if (es == EyeStyle.diamond) {
-          double ecx=x+3.5*qt, ecy=y+3.5*qt;
-          canvas.drawPath(Path()..moveTo(ecx,y)..lineTo(x+7*qt,ecy)..lineTo(ecx,y+7*qt)..lineTo(x,ecy)..moveTo(ecx,y+1.2*qt)..lineTo(x+5.8*qt,ecy)..lineTo(ecx,y+5.8*qt)..lineTo(x+1.2*qt,ecy)..fillType=PathFillType.evenOdd, pE);
-          canvas.drawPath(Path()..moveTo(ecx,y+2.2*qt)..lineTo(x+4.8*qt,ecy)..lineTo(ecx,y+4.8*qt)..lineTo(x+2.2*qt,ecy)..close(), pI);
         } else {
           canvas.drawPath(Path()..addRect(Rect.fromLTWH(x,y,s,s))..addRect(Rect.fromLTWH(x+qt,y+qt,s-2*qt,s-2*qt))..fillType=PathFillType.evenOdd, pE);
           canvas.drawRect(Rect.fromLTWH(x+2.1*qt,y+2.1*qt,s-4.2*qt,s-4.4*qt), pI);
         }
       }
-      drawSmallEye(offset, offset);
-      drawSmallEye(offset + (m-7)*qt, offset);
-      drawSmallEye(offset, offset + (m-7)*qt);
+      drawEye(offset, offset);
+      drawEye(offset + (m-7)*qt, offset);
+      drawEye(offset, offset + (m-7)*qt);
 
     } else {
-      // ────────────────────────────────────────────────────────────────
-      // LOGICA ORIGINAL PARA SPLIT Y CIRCULAR
-      // ────────────────────────────────────────────────────────────────
-      final excl = List.generate(m, (_) => List.filled(m, false));
-      if (logoImage != null && outerMask != null) {
-        final lf=logoSize/270.0, ls=(1-lf)/2.0, le=ls+lf;
-        final base=List.generate(m,(_)=>List.filled(m,false));
-        for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
-          bool hit=false;
-          for (double dy=0.2;dy<=0.8&&!hit;dy+=0.3)
-            for (double dx=0.2;dx<=0.8&&!hit;dx+=0.3) {
-              final nx=(c+dx)/m, ny=(r+dy)/m;
-              if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
-                final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
-                final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
-                if (outerMask![py][px]) hit=true;
-              }
-            }
-          if (hit) base[r][c]=true;
-        }
-        final ar=auraSize.toInt();
-        for (int r=0;r<m;r++) for (int c=0;c<m;c++)
-          if (base[r][c]) for (int dr=-ar;dr<=ar;dr++) for (int dc=-ar;dc<=ar;dc++) {
-            final nr=r+dr, nc=c+dc;
-            if (nr>=0&&nr<m&&nc>=0&&nc<m) excl[nr][nc]=true;
-          }
-      }
+      // ==========================================================
+      // FALLBACK PARA OTROS ESTILOS AVANZADOS (Circular, Split)
+      // ==========================================================
+      final pen1 = Paint()..isAntiAlias=true..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+      if (grad!=null) pen1.shader=grad; else pen1.color=qrC1;
 
-      final pathC1=Path(), pathC2=Path();
+      final pathC1=Path();
       for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
-        if (!qr.isDark(r,c) || _isEye(r,c,m) || excl[r][c]) continue;
-        if (estiloAvanzado=="QR Circular" && math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2)) > m/2.1) continue;
+        if (!qr.isDark(r,c) || _isEye(r,c,m)) continue;
+        if (estiloAvanzado=="QR Circular" && (c-m/2)*(c-m/2)+(r-m/2)*(r-m/2) > (m/2.1)*(m/2.1)) continue;
 
         final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
-        if (estiloAvanzado=="Split Liquid (Mitades)") {
-          final left=c<m/2;
-          final ap=left?pathC1:pathC2;
-          ap.moveTo(cx,cy); ap.lineTo(cx,cy);
-          if (qr.isDark(r,c+1)&&!_isEye(r,c+1,m)&&!excl[r][c+1]&&((c+1<m/2)==left)) { ap.moveTo(cx,cy); ap.lineTo(cx+t,cy); }
-          if (qr.isDark(r+1,c)&&!_isEye(r+1,c,m)&&!excl[r+1][c]) { ap.moveTo(cx,cy); ap.lineTo(cx,cy+t); }
-        } else {
-          pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
-          if (qr.isDark(r,c+1)&&!_isEye(r,c+1,m)&&!excl[r][c+1]) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
-          if (qr.isDark(r+1,c)&&!_isEye(r+1,c,m)&&!excl[r+1][c]) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
-        }
+        pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
+        if (qr.isDark(r,c+1)&&!_isEye(r,c+1,m)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
+        if (qr.isDark(r+1,c)&&!_isEye(r+1,c,m)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
       }
-      if (estiloAvanzado=="Split Liquid (Mitades)") {
-        canvas.drawPath(pathC1,pen1); canvas.drawPath(pathC2,pen2);
-      } else canvas.drawPath(pathC1,pen1);
+      canvas.drawPath(pathC1,pen1);
 
       void eye(double x, double y) {
         final s=7*t;
-        canvas.drawPath(Path()..addOval(Rect.fromLTWH(x,y,s,s))..addOval(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))..fillType=PathFillType.evenOdd, pE);
-        canvas.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
+        canvas.drawPath(Path()..addRect(Rect.fromLTWH(x,y,s,s))..addRect(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))..fillType=PathFillType.evenOdd, pE);
+        canvas.drawRect(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.4*t), pI);
       }
       eye(0,0); eye((m-7)*t,0); eye(0,(m-7)*t);
     }
