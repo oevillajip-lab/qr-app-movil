@@ -1513,12 +1513,11 @@ class QrAdvancedPainter extends CustomPainter {
         }
       }
 
-      void drawDecorSilhouette({Rect? reservedRect}) {
-        final double probeSide = reservedRect != null
-            ? reservedRect.width / (m + 4.0)
-            : size.width / (m + 6.0);
-
-        final double decoT = probeSide.clamp(4.0, 14.0).toDouble();
+        void drawDecorSilhouette({
+        Rect? reservedRect,
+        required double moduleStep,
+      }) {
+        final double decoT = moduleStep.clamp(4.0, 14.0).toDouble();
         final int cols = (size.width / decoT).ceil();
         final int rows = (size.height / decoT).ceil();
 
@@ -1573,14 +1572,19 @@ class QrAdvancedPainter extends CustomPainter {
       );
 
       if (qrBox == null) {
-        drawDecorSilhouette();
+        drawDecorSilhouette(
+          moduleStep: size.width / (m + 6.0),
+        );
         return;
       }
 
-      drawDecorSilhouette(reservedRect: qrBox);
 
       const double quietModules = 2.0;
       final double qt = qrBox.width / (m + quietModules * 2.0);
+      drawDecorSilhouette(
+      reservedRect: qrBox,
+      moduleStep: qt,
+      );
 
       final Rect qrDataRect = Rect.fromLTWH(
         qrBox.left + qt * quietModules,
