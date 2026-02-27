@@ -137,7 +137,7 @@ class _MainScreenState extends State<MainScreen>
     "Diamantes (Rombos)",
     "QR Circular",
     "Split Liquid (Mitades)",
-    "Forma de Mapa (Máscara)",
+    "Formas (Máscara)",
   ];
 
   @override
@@ -155,13 +155,18 @@ class _MainScreenState extends State<MainScreen>
   // 📌 [SECCIÓN 5: PROCESAMIENTO DE IMAGEN Y TEXTOS DEL QR]
   // Funciones para calcular espacio, quitar fondo blanco y formatear VCard/WiFi, etc.
   // ── Efectivo logo con freno ────────────────────────────────────
-  double _effectiveLogo(bool isMap) {
-    // Ya no usamos isMap aquí, el logo central siempre obedece a su propio tamaño
+  double _effectiveLogo(bool isShape) {
     final data = _getFinalData();
     if (data.isEmpty) return _logoSize;
     final qr = _buildQrImage(data);
     if (qr == null) return _logoSize;
-    final maxPx = _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize);
+    
+    double maxPx = _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize);
+    
+    // EL TRUCO: Si es Forma Personalizada, el QR real es el 55% del tamaño total.
+    // Reducimos el límite máximo del logo a la mitad para que no rompa la lectura.
+    if (isShape) maxPx = maxPx * 0.50; 
+    
     return _logoSize.clamp(30.0, maxPx);
   }
 
@@ -355,7 +360,7 @@ class _MainScreenState extends State<MainScreen>
   Widget _buildAdvancedTab() {
     final data      = _getFinalData();
     final isEmpty   = data.isEmpty;
-    final isMap     = _estiloAvz == "Forma de Mapa (Máscara)";
+    final isMap     = _estiloAvz == "Formas (Máscara)";
     final effLogo   = _effectiveLogo(isMap);
     final limited   = _logoBytes != null && !isMap && effLogo < _logoSize - 0.5;
 
@@ -376,9 +381,9 @@ class _MainScreenState extends State<MainScreen>
               (s) => setState(() => _estiloAvz = s)),
               
           // LA CORRECCIÓN: Si elige Mapa, le dejamos elegir de qué están hechos los trazos
-          if (_estiloAvz == "Forma de Mapa (Máscara)") ...[
+          if (_estiloAvz == "Formas (Máscara)") ...[
             const Padding(padding: EdgeInsets.only(top: 14, bottom: 8),
-                child: Text("Estilo de relleno del Mapa:", 
+                child: Text("Estilo de Formas:", 
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
             DropdownButtonFormField<String>(
                 value: _mapSubStyle,
@@ -545,7 +550,7 @@ class _MainScreenState extends State<MainScreen>
     if (s.contains("Circular") && !s.contains("QR")) return "Circular";
     if (s.contains("QR Circ"))  return "QR Circular";
     if (s.contains("Split"))    return "Split";
-    if (s.contains("Mapa"))     return "Mapa";
+    if (s.contains("Formas"))     return "Formas";
     return s;
   }
 
@@ -646,12 +651,9 @@ class _MainScreenState extends State<MainScreen>
   }
 
   Widget _qrPreview(String data, bool isEmpty, String estilo, bool isAdv, double effLogo) {
-    final isMap      = estilo == "Forma de Mapa (Máscara)";
-    final isAdvStyle = isAdv && (estilo == "QR Circular" ||
-        estilo == "Split Liquid (Mitades)" || isMap);
-    final bgColor = _bgMode == "Transparente"  ? Colors.transparent
-        : _bgMode == "Sólido (Color)"          ? _bgC1
-        : Colors.white;
+    final isMap      = estilo == "Forma Personalizada";
+    final isAdvStyle = isAdv && (estilo == "QR Circular" || estilo == "Split Liquid (Mitades)" || isMap);
+    final bgColor = _bgMode == "Transparente"  ? Colors.transparent : _bgMode == "Sólido (Color)" ? _bgC1 : Colors.white;
     final bgGrad  = _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null;
 
     return RepaintBoundary(
@@ -662,16 +664,14 @@ class _MainScreenState extends State<MainScreen>
           color: bgGrad == null ? bgColor : null,
           gradient: bgGrad,
           borderRadius: BorderRadius.circular(6),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
-              blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: Center(
           child: isEmpty
               ? Column(mainAxisAlignment: MainAxisAlignment.center, children: const [
                   Icon(Icons.qr_code_2, size: 56, color: Colors.black12),
                   SizedBox(height: 8),
-                  Text("Esperando contenido...",
-                      style: TextStyle(color: Colors.grey, fontSize: 14)),
+                  Text("Esperando contenido...", style: TextStyle(color: Colors.grey, fontSize: 14)),
                 ])
               : Stack(alignment: Alignment.center, children: [
                   CustomPaint(
@@ -679,23 +679,21 @@ class _MainScreenState extends State<MainScreen>
                     painter: isAdvStyle
                         ? QrAdvancedPainter(
                             data: data, estiloAvanzado: estilo,
-                            mapSubStyle: _mapSubStyle, // LE ENVIAMOS LA ORDEN AL PINTOR
+                            mapSubStyle: _mapSubStyle, // AQUÍ PASAMOS EL ESTILO INTERNO (Puntos, etc)
                             logoImage: _logoImage, outerMask: _outerMask,
                             shapeImage: _shapeImage, shapeMask: _shapeMask,
                             logoSize: effLogo, shapeSize: _logoSizeMap,
                             auraSize: _auraSize,
                             qrC1: _qrC1, qrC2: _qrC2,
                             qrMode: _qrColorMode, qrDir: _qrGradDir,
-                            customEyes: _customEyes,
-                            eyeExt: _eyeExt, eyeInt: _eyeInt)
+                            customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt)
                         : QrMasterPainter(
                             data: data, estilo: estilo,
                             logoImage: _logoImage, outerMask: _outerMask,
                             logoSize: effLogo, auraSize: _auraSize,
                             qrC1: _qrC1, qrC2: _qrC2,
                             qrMode: _qrColorMode, qrDir: _qrGradDir,
-                            customEyes: _customEyes,
-                            eyeExt: _eyeExt, eyeInt: _eyeInt),
+                            customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt),
                   ),
                   if (_logoBytes != null)
                     SizedBox(width: effLogo, height: effLogo,
@@ -1191,9 +1189,6 @@ class QrMasterPainter extends CustomPainter {
 }
 
 // 📌 [SECCIÓN 11: PINTOR DE QR AVANZADO]
-// Dibuja los QR de la pestaña "Avanzado" (Mapa, Split, Circular).
-// ═══════════════════════════════════════════════════════════════════
-// QR ADVANCED PAINTER — estilos avanzados
 // ═══════════════════════════════════════════════════════════════════
 class QrAdvancedPainter extends CustomPainter {
   final String data, estiloAvanzado, mapSubStyle, qrMode, qrDir;
@@ -1213,20 +1208,7 @@ class QrAdvancedPainter extends CustomPainter {
     required this.customEyes, required this.eyeExt, required this.eyeInt,
   });
 
-  bool _isEye(int r, int c, int m) =>
-      (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
-
-  bool _isProtected(int r, int c, int m) {
-    if (r <= 8 && c <= 8) return true;
-    if (r <= 8 && c >= m - 9) return true;
-    if (r >= m - 9 && c <= 8) return true;
-    if (r == 6 || c == 6) return true;
-    if (m > 21) {
-      int align = m - 7;
-      if (r >= align - 3 && r <= align + 3 && c >= align - 3 && c <= align + 3) return true;
-    }
-    return false;
-  }
+  bool _isEye(int r, int c, int m) => (r<7&&c<7)||(r<7&&c>=m-7)||(r>=m-7&&c<7);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1234,167 +1216,205 @@ class QrAdvancedPainter extends CustomPainter {
     if (qr == null) return;
     final int m = qr.moduleCount;
     final double t = size.width / m;
-    final bool isMap = estiloAvanzado == "Forma de Mapa (Máscara)";
-
-    final double effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
+    final bool isShape = estiloAvanzado == "Forma Personalizada";
 
     ui.Shader? grad;
     if (qrMode == "Degradado Custom") {
       var b=Alignment.topCenter, e=Alignment.bottomCenter;
-      if (qrDir=="Horizontal") { b=Alignment.centerLeft;  e=Alignment.centerRight; }
-      if (qrDir=="Diagonal")   { b=Alignment.topLeft;     e=Alignment.bottomRight; }
+      if (qrDir=="Horizontal") { b=Alignment.centerLeft; e=Alignment.centerRight; }
+      if (qrDir=="Diagonal")   { b=Alignment.topLeft;    e=Alignment.bottomRight; }
       grad = ui.Gradient.linear(
           Offset(size.width*(b.x+1)/2, size.height*(b.y+1)/2),
-          Offset(size.width*(e.x+1)/2, size.height*(e.y+1)/2),
-          [qrC1, qrC2]);
+          Offset(size.width*(e.x+1)/2, size.height*(e.y+1)/2), [qrC1, qrC2]);
     }
 
-    final pen1 = Paint()..isAntiAlias=true..style=PaintingStyle.stroke
-        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
+    final pen1 = Paint()..isAntiAlias=true..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
     if (grad!=null) pen1.shader=grad; else pen1.color=qrC1;
-    final pen2 = Paint()..isAntiAlias=true..color=qrC2..style=PaintingStyle.stroke
-        ..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
-    
+    final pen2 = Paint()..isAntiAlias=true..color=qrC2..style=PaintingStyle.stroke..strokeWidth=t..strokeCap=StrokeCap.round..strokeJoin=StrokeJoin.round;
     final paintSolid = Paint()..isAntiAlias=true;
     if (grad!=null) paintSolid.shader=grad; else paintSolid.color=qrC1;
-
-    final excl = List.generate(m, (_) => List.filled(m, false));
-
-    if (logoImage != null && outerMask != null) {
-      final lf=effLogo/270.0, ls=(1-lf)/2.0, le=ls+lf;
-      final base=List.generate(m,(_)=>List.filled(m,false));
-      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
-        bool hit=false;
-        for (double dy=0.2;dy<=0.8&&!hit;dy+=0.3)
-          for (double dx=0.2;dx<=0.8&&!hit;dx+=0.3) {
-            final nx=(c+dx)/m, ny=(r+dy)/m;
-            if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
-              final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
-              final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
-              if (outerMask![py][px]) hit=true;
-            }
-          }
-        if (hit) base[r][c]=true;
-      }
-      final ar=auraSize.toInt();
-      for (int r=0;r<m;r++) for (int c=0;c<m;c++)
-        if (base[r][c]) for (int dr=-ar;dr<=ar;dr++) for (int dc=-ar;dc<=ar;dc++) {
-          final nr=r+dr, nc=c+dc;
-          if (nr>=0&&nr<m&&nc>=0&&nc<m) excl[nr][nc]=true;
-        }
-    }
-
-    final mapMask = List.generate(m, (_) => List.filled(m, false));
-    if (isMap && shapeImage != null && shapeMask != null) {
-      final lf=shapeSize/270.0, ls=(1-lf)/2.0, le=ls+lf;
-      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
-        final nx=(c+0.5)/m, ny=(r+0.5)/m;
-        if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
-          final px=((nx-ls)/lf*shapeImage!.width).clamp(0,shapeImage!.width-1).toInt();
-          final py=((ny-ls)/lf*shapeImage!.height).clamp(0,shapeImage!.height-1).toInt();
-          if (shapeMask![py][px]) mapMask[r][c]=true;
-        }
-      }
-    }
-
-    bool ok(int r, int c) {
-      if (r<0||r>=m||c<0||c>=m) return false;
-      if (!qr.isDark(r,c)) return false;
-      if (_isEye(r,c,m)) return false; 
-      if (excl[r][c]) return false;
-      if (estiloAvanzado=="QR Circular") {
-        if (math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2)) > m/2.1) return false;
-      }
-      if (isMap && shapeImage != null) {
-        if (!mapMask[r][c] && !_isProtected(r, c, m)) return false;
-      }
-      return true;
-    }
-
-    // Aquí está la magia: Decidimos el estilo interno
-    String estiloActual = estiloAvanzado;
-    if (isMap) estiloActual = mapSubStyle;
-
-    final pathC1=Path(), pathC2=Path();
-    
-    for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
-      if (!ok(r,c)) continue;
-      final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
-
-      if (estiloActual.contains("Puntos")) {
-        canvas.drawCircle(Offset(cx, cy), t*0.4, paintSolid);
-      } else if (estiloActual.contains("Diamantes")) {
-        canvas.drawPath(Path()
-          ..moveTo(cx, y)..lineTo(x+t, cy)..lineTo(cx, y+t)..lineTo(x, cy)..close(), paintSolid);
-      } else if (estiloActual.contains("Barras")) {
-        if (r==0||!ok(r-1,c)) {
-          int er=r; while(er+1<m&&ok(er+1,c)) er++;
-          canvas.drawRRect(RRect.fromRectAndRadius(
-              Rect.fromLTWH(x+t*0.1,y,t*0.8,(er-r+1)*t),
-              Radius.circular(t*0.38)), paintSolid);
-        }
-      } else if (estiloActual.contains("Normal")) {
-        canvas.drawRect(Rect.fromLTWH(x,y,t+0.3,t+0.3), paintSolid);
-      } else {
-        if (estiloAvanzado=="Split Liquid (Mitades)") {
-          final left=c<m/2;
-          final ap=left?pathC1:pathC2;
-          ap.moveTo(cx,cy); ap.lineTo(cx,cy);
-          if (ok(r,c+1)&&((c+1<m/2)==left)) { ap.moveTo(cx,cy); ap.lineTo(cx+t,cy); }
-          if (ok(r+1,c)) { ap.moveTo(cx,cy); ap.lineTo(cx,cy+t); }
-        } else {
-          pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
-          if (ok(r,c+1)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
-          if (ok(r+1,c)) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
-        }
-      }
-    }
-    
-    if (estiloActual.contains("Gusano") || estiloAvanzado=="QR Circular" || estiloAvanzado=="Split Liquid (Mitades)") {
-      if (estiloAvanzado=="Split Liquid (Mitades)") {
-        canvas.drawPath(pathC1,pen1);
-        canvas.drawPath(pathC2,pen2);
-      } else {
-        canvas.drawPath(pathC1,pen1);
-      }
-    }
 
     final pE=Paint()..isAntiAlias=true;
     final pI=Paint()..isAntiAlias=true;
     if (customEyes) { pE.color=eyeExt; pI.color=eyeInt; }
     else if (grad!=null) { pE.shader=grad; pI.shader=grad; }
     else { pE.color=qrC1; pI.color=qrC1; }
-    
-    EyeStyle es = EyeStyle.rect;
-    if (estiloActual.contains("Puntos")) es = EyeStyle.circ;
-    if (estiloActual.contains("Diamantes")) es = EyeStyle.diamond;
-    
-    void eye(double x, double y) {
-      final s=7*t;
-      if (es == EyeStyle.circ) {
-        canvas.drawPath(Path()
-          ..addOval(Rect.fromLTWH(x,y,s,s))
-          ..addOval(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
-          ..fillType=PathFillType.evenOdd, pE);
-        canvas.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
-      } else if (es == EyeStyle.diamond) {
-        double ecx=x+3.5*t, ecy=y+3.5*t;
-        canvas.drawPath(Path()
-          ..moveTo(ecx,y)..lineTo(x+7*t,ecy)..lineTo(ecx,y+7*t)..lineTo(x,ecy)
-          ..moveTo(ecx,y+1.2*t)..lineTo(x+5.8*t,ecy)..lineTo(ecx,y+5.8*t)..lineTo(x+1.2*t,ecy)
-          ..fillType=PathFillType.evenOdd, pE);
-        canvas.drawPath(Path()
-          ..moveTo(ecx,y+2.2*t)..lineTo(x+4.8*t,ecy)
-          ..lineTo(ecx,y+4.8*t)..lineTo(x+2.2*t,ecy)..close(), pI);
-      } else {
-        canvas.drawPath(Path()
-          ..addRect(Rect.fromLTWH(x,y,s,s))
-          ..addRect(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))
-          ..fillType=PathFillType.evenOdd, pE);
-        canvas.drawRect(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.4*t), pI);
+
+    // ────────────────────────────────────────────────────────────────
+    // ESTRATEGIA "CAMUFLAJE" (Estilo EE.UU.)
+    // ────────────────────────────────────────────────────────────────
+    if (isShape && shapeImage != null && shapeMask != null) {
+      
+      // 1. DIBUJAR LA SILUETA COMO "RUIDO DE FONDO"
+      int decoM = 55; // Densidad del camuflaje
+      double dt = size.width / decoM;
+      double realQrSize = size.width * 0.55; // El QR real ocupa el 55% del centro
+      double offset = (size.width - realQrSize) / 2.0;
+      Rect qrZone = Rect.fromLTWH(offset - 4, offset - 4, realQrSize + 8, realQrSize + 8);
+
+      final lf = shapeSize / 270.0;
+      final ls = (1 - lf) / 2.0;
+      final le = ls + lf;
+
+      for (int r = 0; r < decoM; r++) {
+        for (int c = 0; c < decoM; c++) {
+          double x = c * dt, y = r * dt;
+          double cx = x + dt / 2, cy = y + dt / 2;
+
+          if (qrZone.contains(Offset(cx, cy))) continue; // Hueco para el QR de verdad
+
+          final nx = (c + 0.5) / decoM, ny = (r + 0.5) / decoM;
+          if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
+            final px = ((nx - ls) / lf * shapeImage!.width).clamp(0, shapeImage!.width - 1).toInt();
+            final py = ((ny - ls) / lf * shapeImage!.height).clamp(0, shapeImage!.height - 1).toInt();
+            
+            if (shapeMask![py][px]) {
+              // Simular datos QR dispersos (~60% de puntos)
+              if ((r * 17 + c * 31) % 100 > 40) {
+                if (mapSubStyle.contains("Puntos")) canvas.drawCircle(Offset(cx, cy), dt * 0.4, paintSolid);
+                else if (mapSubStyle.contains("Diamantes")) canvas.drawPath(Path()..moveTo(cx, y)..lineTo(x+dt, cy)..lineTo(cx, y+dt)..lineTo(x, cy)..close(), paintSolid);
+                else canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, dt+0.2, dt+0.2), Radius.circular(dt*0.3)), paintSolid);
+              }
+            }
+          }
+        }
       }
+
+      // 2. PROTECCIÓN CENTRAL (Fondo blanco detrás del QR para que se lea perfecto)
+      canvas.drawRRect(RRect.fromRectAndRadius(qrZone, const Radius.circular(8)), Paint()..color = Colors.white);
+
+      // 3. DIBUJAR EL CÓDIGO QR REAL (Pequeño, centrado y 100% legible)
+      double qt = realQrSize / m;
+      
+      // Hueco para el logo central (adaptado a la nueva escala reducida)
+      final excl = List.generate(m, (_) => List.filled(m, false));
+      if (logoImage != null && outerMask != null) {
+        final llf = logoSize / realQrSize;
+        final lls = (1 - llf) / 2.0, lle = lls + llf;
+        final base = List.generate(m, (_) => List.filled(m, false));
+        for (int r=0; r<m; r++) for (int c=0; c<m; c++) {
+          bool hit = false;
+          for (double dy=0.2; dy<=0.8&&!hit; dy+=0.3)
+            for (double dx=0.2; dx<=0.8&&!hit; dx+=0.3) {
+              final nx = (c+dx)/m, ny = (r+dy)/m;
+              if (nx>=lls && nx<=lle && ny>=lls && ny<=lle) {
+                final px = ((nx-lls)/llf * logoImage!.width).clamp(0, logoImage!.width-1).toInt();
+                final py = ((ny-lls)/llf * logoImage!.height).clamp(0, logoImage!.height-1).toInt();
+                if (outerMask![py][px]) hit = true;
+              }
+            }
+          if (hit) base[r][c] = true;
+        }
+        final ar = auraSize.toInt();
+        for (int r=0; r<m; r++) for (int c=0; c<m; c++)
+          if (base[r][c]) for (int dr=-ar; dr<=ar; dr++) for (int dc=-ar; dc<=ar; dc++) {
+            final nr=r+dr, nc=c+dc;
+            if (nr>=0 && nr<m && nc>=0 && nc<m) excl[nr][nc] = true;
+          }
+      }
+
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!qr.isDark(r, c) || _isEye(r, c, m) || excl[r][c]) continue;
+          double x = offset + c * qt, y = offset + r * qt;
+          double cx = x + qt / 2, cy = y + qt / 2;
+
+          if (mapSubStyle.contains("Puntos")) {
+            canvas.drawCircle(Offset(cx, cy), qt * 0.4, paintSolid);
+          } else if (mapSubStyle.contains("Diamantes")) {
+            canvas.drawPath(Path()..moveTo(cx, y)..lineTo(x+qt, cy)..lineTo(cx, y+qt)..lineTo(x, cy)..close(), paintSolid);
+          } else if (mapSubStyle.contains("Barras")) {
+            if (r==0||!qr.isDark(r-1,c)||_isEye(r-1,c,m)||excl[r-1][c]) {
+              int er=r; while(er+1<m&&qr.isDark(er+1,c)&&!_isEye(er+1,c,m)&&!excl[er+1][c]) er++;
+              canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x+qt*0.1,y,qt*0.8,(er-r+1)*qt), Radius.circular(qt*0.38)), paintSolid);
+            }
+          } else {
+            canvas.drawRect(Rect.fromLTWH(x, y, qt+0.3, qt+0.3), paintSolid);
+          }
+        }
+      }
+
+      // 4. OJOS DEL QR CENTRAL
+      EyeStyle es = EyeStyle.rect;
+      if (mapSubStyle.contains("Puntos")) es = EyeStyle.circ;
+      if (mapSubStyle.contains("Diamantes")) es = EyeStyle.diamond;
+      
+      void drawSmallEye(double x, double y) {
+        final s = 7 * qt;
+        if (es == EyeStyle.circ) {
+          canvas.drawPath(Path()..addOval(Rect.fromLTWH(x,y,s,s))..addOval(Rect.fromLTWH(x+qt,y+qt,s-2*qt,s-2*qt))..fillType=PathFillType.evenOdd, pE);
+          canvas.drawOval(Rect.fromLTWH(x+2.1*qt,y+2.1*qt,s-4.2*qt,s-4.2*qt), pI);
+        } else if (es == EyeStyle.diamond) {
+          double ecx=x+3.5*qt, ecy=y+3.5*qt;
+          canvas.drawPath(Path()..moveTo(ecx,y)..lineTo(x+7*qt,ecy)..lineTo(ecx,y+7*qt)..lineTo(x,ecy)..moveTo(ecx,y+1.2*qt)..lineTo(x+5.8*qt,ecy)..lineTo(ecx,y+5.8*qt)..lineTo(x+1.2*qt,ecy)..fillType=PathFillType.evenOdd, pE);
+          canvas.drawPath(Path()..moveTo(ecx,y+2.2*qt)..lineTo(x+4.8*qt,ecy)..lineTo(ecx,y+4.8*qt)..lineTo(x+2.2*qt,ecy)..close(), pI);
+        } else {
+          canvas.drawPath(Path()..addRect(Rect.fromLTWH(x,y,s,s))..addRect(Rect.fromLTWH(x+qt,y+qt,s-2*qt,s-2*qt))..fillType=PathFillType.evenOdd, pE);
+          canvas.drawRect(Rect.fromLTWH(x+2.1*qt,y+2.1*qt,s-4.2*qt,s-4.4*qt), pI);
+        }
+      }
+      drawSmallEye(offset, offset);
+      drawSmallEye(offset + (m-7)*qt, offset);
+      drawSmallEye(offset, offset + (m-7)*qt);
+
+    } else {
+      // ────────────────────────────────────────────────────────────────
+      // LOGICA ORIGINAL PARA SPLIT Y CIRCULAR
+      // ────────────────────────────────────────────────────────────────
+      final excl = List.generate(m, (_) => List.filled(m, false));
+      if (logoImage != null && outerMask != null) {
+        final lf=logoSize/270.0, ls=(1-lf)/2.0, le=ls+lf;
+        final base=List.generate(m,(_)=>List.filled(m,false));
+        for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+          bool hit=false;
+          for (double dy=0.2;dy<=0.8&&!hit;dy+=0.3)
+            for (double dx=0.2;dx<=0.8&&!hit;dx+=0.3) {
+              final nx=(c+dx)/m, ny=(r+dy)/m;
+              if (nx>=ls&&nx<=le&&ny>=ls&&ny<=le) {
+                final px=((nx-ls)/lf*logoImage!.width).clamp(0,logoImage!.width-1).toInt();
+                final py=((ny-ls)/lf*logoImage!.height).clamp(0,logoImage!.height-1).toInt();
+                if (outerMask![py][px]) hit=true;
+              }
+            }
+          if (hit) base[r][c]=true;
+        }
+        final ar=auraSize.toInt();
+        for (int r=0;r<m;r++) for (int c=0;c<m;c++)
+          if (base[r][c]) for (int dr=-ar;dr<=ar;dr++) for (int dc=-ar;dc<=ar;dc++) {
+            final nr=r+dr, nc=c+dc;
+            if (nr>=0&&nr<m&&nc>=0&&nc<m) excl[nr][nc]=true;
+          }
+      }
+
+      final pathC1=Path(), pathC2=Path();
+      for (int r=0;r<m;r++) for (int c=0;c<m;c++) {
+        if (!qr.isDark(r,c) || _isEye(r,c,m) || excl[r][c]) continue;
+        if (estiloAvanzado=="QR Circular" && math.sqrt(math.pow(c-m/2,2)+math.pow(r-m/2,2)) > m/2.1) continue;
+
+        final double x=c*t, y=r*t, cx=x+t/2, cy=y+t/2;
+        if (estiloAvanzado=="Split Liquid (Mitades)") {
+          final left=c<m/2;
+          final ap=left?pathC1:pathC2;
+          ap.moveTo(cx,cy); ap.lineTo(cx,cy);
+          if (qr.isDark(r,c+1)&&!_isEye(r,c+1,m)&&!excl[r][c+1]&&((c+1<m/2)==left)) { ap.moveTo(cx,cy); ap.lineTo(cx+t,cy); }
+          if (qr.isDark(r+1,c)&&!_isEye(r+1,c,m)&&!excl[r+1][c]) { ap.moveTo(cx,cy); ap.lineTo(cx,cy+t); }
+        } else {
+          pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy);
+          if (qr.isDark(r,c+1)&&!_isEye(r,c+1,m)&&!excl[r][c+1]) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx+t,cy); }
+          if (qr.isDark(r+1,c)&&!_isEye(r+1,c,m)&&!excl[r+1][c]) { pathC1.moveTo(cx,cy); pathC1.lineTo(cx,cy+t); }
+        }
+      }
+      if (estiloAvanzado=="Split Liquid (Mitades)") {
+        canvas.drawPath(pathC1,pen1); canvas.drawPath(pathC2,pen2);
+      } else canvas.drawPath(pathC1,pen1);
+
+      void eye(double x, double y) {
+        final s=7*t;
+        canvas.drawPath(Path()..addOval(Rect.fromLTWH(x,y,s,s))..addOval(Rect.fromLTWH(x+t,y+t,s-2*t,s-2*t))..fillType=PathFillType.evenOdd, pE);
+        canvas.drawOval(Rect.fromLTWH(x+2.1*t,y+2.1*t,s-4.2*t,s-4.2*t), pI);
+      }
+      eye(0,0); eye((m-7)*t,0); eye(0,(m-7)*t);
     }
-    eye(0,0); eye((m-7)*t,0); eye(0,(m-7)*t);
   }
   @override bool shouldRepaint(CustomPainter o) => true;
 }
