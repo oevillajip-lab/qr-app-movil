@@ -116,6 +116,7 @@ class _MainScreenState extends State<MainScreen>
   double _logoSize    = 60.0;
   double _logoSizeMap = 270.0; // Tamaño base de la silueta
   double _auraSize    = 1.5;   // Mínimo de aura ahora es 1.5 (muy visible)
+  String _mapSubStyle = "Liquid Pro (Gusano)"; // El estilo interno del mapa
 
   late TabController _tabCtrl;
   final GlobalKey _qrKey = GlobalKey();
@@ -370,8 +371,24 @@ class _MainScreenState extends State<MainScreen>
         ])),
 
         // 2. Estilo avanzado (selector visual con todos)
-        _card("2. Estilo del QR", _styleSelector(_advStyles, _estiloAvz,
-            (s) => setState(() => _estiloAvz = s))),
+        _card("2. Estilo del QR", Column(children: [
+          _styleSelector(_advStyles, _estiloAvz,
+              (s) => setState(() => _estiloAvz = s)),
+              
+          // LA CORRECCIÓN: Si elige Mapa, le dejamos elegir de qué están hechos los trazos
+          if (_estiloAvz == "Forma de Mapa (Máscara)") ...[
+            const Padding(padding: EdgeInsets.only(top: 14, bottom: 8),
+                child: Text("Estilo de relleno del Mapa:", 
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+            DropdownButtonFormField<String>(
+                value: _mapSubStyle,
+                decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12)),
+                items: _basicStyles.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                onChanged: (v) => setState(() => _mapSubStyle = v!)),
+          ],
+        ])),
 
         // 3. Color y degradado
         _card("3. Color y Degradado", Column(children: [
@@ -485,22 +502,15 @@ class _MainScreenState extends State<MainScreen>
                               style: style, c1: _qrC1, c2: _qrC2),
                         ),
                       ),
-                      // Logo o placeholder "LOGO"
+                      // Logo o placeholder "LOGO" limpio (sin recuadro)
                       if (_logoBytes != null)
                         SizedBox(width: 24, height: 24,
                             child: Image.memory(_logoBytes!, fit: BoxFit.contain))
                       else
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.grey.shade400, width: 1.2),
-                          ),
-                          child: const Text("LOGO",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900,
-                                  color: Colors.black87, letterSpacing: 0.5)),
+                        const Text("LOGO",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900,
+                                color: Colors.black, letterSpacing: 0.5)),
                         ),
                     ]),
                   ),
