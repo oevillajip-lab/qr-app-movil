@@ -1521,7 +1521,16 @@ class QrAdvancedPainter extends CustomPainter {
         final int cols = (size.width / decoT).ceil();
         final int rows = (size.height / decoT).ceil();
 
-        bool cellAllowed(Rect cellRect) {
+        bool cellAllowed(int rr, int cc) {
+          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
+
+          final Rect cellRect = Rect.fromLTWH(
+            cc * decoT,
+            rr * decoT,
+            decoT,
+            decoT,
+          );
+
           if (cellRect.right > size.width || cellRect.bottom > size.height) {
             return false;
           }
@@ -1529,36 +1538,57 @@ class QrAdvancedPainter extends CustomPainter {
             return false;
           }
           if (!rectWellInsideShape(cellRect)) return false;
+
           return true;
         }
 
-        // MODO BARRAS: construir columnas continuas por tramos
-        if (mapSubStyle.contains("Barras")) {
+        int hashCell(int rr, int cc) {
+          int v = ((rr + 11) * 73856093) ^
+              ((cc + 17) * 19349663) ^
+              ((m + 23) * 83492791);
+          v ^= (v >> 13);
+          v ^= (v << 7);
+          return v & 0x7fffffff;
+        }
+
+        final bool isLiquidStyle =
+            mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+        final bool isBarsStyle = mapSubStyle.contains("Barras");
+        final bool isDotsStyle = mapSubStyle.contains("Puntos");
+        final bool isDiamondStyle = mapSubStyle.contains("Diamantes");
+        final bool isNormalStyle =
+            mapSubStyle.contains("Cuadrado") || mapSubStyle.contains("Normal");
+
+        int density = 58;
+        if (isBarsStyle) density = 60;
+        if (isLiquidStyle) density = 60;
+        if (isNormalStyle) density = 52;
+        if (isDotsStyle) density = 56;
+        if (isDiamondStyle) density = 56;
+
+        final active = List.generate(
+          rows,
+          (rr) => List.generate(cols, (cc) {
+            if (!cellAllowed(rr, cc)) return false;
+            final int h = hashCell(rr, cc) % 100;
+            return h < density;
+          }),
+        );
+
+        bool on(int rr, int cc) {
+          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
+          return active[rr][cc];
+        }
+
+        // BARRAS: igual lógica visual que el QR, pero sobre malla pseudoaleatoria
+        if (isBarsStyle) {
           for (int cc = 0; cc < cols; cc++) {
-            int rr = 0;
-
-            while (rr < rows) {
-              final Rect startRect = Rect.fromLTWH(
-                cc * decoT,
-                rr * decoT,
-                decoT,
-                decoT,
-              );
-
-              if (!cellAllowed(startRect)) {
-                rr++;
-                continue;
-              }
+            for (int rr = 0; rr < rows; rr++) {
+              if (!on(rr, cc)) continue;
+              if (rr > 0 && on(rr - 1, cc)) continue;
 
               int endR = rr;
-              while (endR + 1 < rows) {
-                final Rect nextRect = Rect.fromLTWH(
-                  cc * decoT,
-                  (endR + 1) * decoT,
-                  decoT,
-                  decoT,
-                );
-                if (!cellAllowed(nextRect)) break;
+              while (endR + 1 < rows && on(endR + 1, cc)) {
                 endR++;
               }
 
@@ -1569,35 +1599,108 @@ class QrAdvancedPainter extends CustomPainter {
               canvas.drawRRect(
                 RRect.fromRectAndRadius(
                   Rect.fromLTWH(
-                    x + decoT * 0.22,
-                    y + decoT * 0.06,
-                    decoT * 0.56,
-                    h - decoT * 0.12,
+                    x + decoT * 0.10,
+                    y,
+                    decoT * 0.80,
+                    h,
                   ),
-                  Radius.circular(decoT * 0.28),
+                  Radius.circular(decoT * 0.38),
                 ),
                 solidPaint,
               );
-
-              rr = endR + 1;
             }
           }
           return;
         }
 
-        // RESTO DE ESTILOS: sigue por celda
+        // LIQUID: mismos conectores tipo QR, pero sobre malla pseudoaleatoria
+        if (isLiquidStyle) {
+          final decoLiquidPen = Paint()
+            ..isAntiAlias = true
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = decoT
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round;
+
+          if (grad != null) {
+            decoLiquidPen.shader = grad;
+          } else {
+            decoLiquidPen.color = qrC1;
+          }
+
+          final Path decoPath = Path();
+
+          for (int rr = 0; rr < rows; rr++) {
+            for (int cc = 0; cc < cols; cc++) {
+              if (!on(rr, cc)) continue;
+
+              final double x = cc * decoT;
+              final double y = rr * decoT;
+              final double cx = x + decoT / 2;
+              final double cy = y + decoT / 2;
+
+              decoPath.moveTo(cx, cy);
+              decoPath.lineTo(cx, cy);
+
+              if (on(rr, cc + 1)) {
+                decoPath.moveTo(cx, cy);
+                decoPath.lineTo(cx + decoT, cy);
+              }
+              if (on(rr + 1, cc)) {
+                decoPath.moveTo(cx, cy);
+                decoPath.lineTo(cx, cy + decoT);
+              }
+            }
+          }
+
+          canvas.drawPath(decoPath, decoLiquidPen);
+          return;
+        }
+
+        // NORMAL / PUNTOS / DIAMANTES
         for (int rr = 0; rr < rows; rr++) {
           for (int cc = 0; cc < cols; cc++) {
-            final Rect cellRect = Rect.fromLTWH(
-              cc * decoT,
-              rr * decoT,
-              decoT,
-              decoT,
-            );
+            if (!on(rr, cc)) continue;
 
-            if (!cellAllowed(cellRect)) continue;
+            final double x = cc * decoT;
+            final double y = rr * decoT;
+            final double cx = x + decoT / 2;
+            final double cy = y + decoT / 2;
 
-            drawDecorCell(cellRect, rr, cc);
+            if (isDotsStyle) {
+              final double h = (hashCell(rr, cc) % 100) / 100.0;
+              canvas.drawCircle(
+                Offset(cx, cy),
+                decoT * (0.28 + 0.10 * h),
+                solidPaint,
+              );
+            } else if (isDiamondStyle) {
+              final double h = (hashCell(rr, cc) % 100) / 100.0;
+              final double sc = 0.62 + 0.22 * h;
+              final double off = decoT * (1 - sc) / 2;
+
+              canvas.drawPath(
+                Path()
+                  ..moveTo(cx, y + off)
+                  ..lineTo(x + decoT - off, cy)
+                  ..lineTo(cx, y + decoT - off)
+                  ..lineTo(x + off, cy)
+                  ..close(),
+                solidPaint,
+              );
+            } else {
+              // NORMAL: módulos cuadrados visibles, no relleno continuo
+              final double inset = decoT * 0.12;
+              canvas.drawRect(
+                Rect.fromLTWH(
+                  x + inset,
+                  y + inset,
+                  decoT - inset * 2 + 0.1,
+                  decoT - inset * 2 + 0.1,
+                ),
+                solidPaint,
+              );
+            }
           }
         }
       }
@@ -1637,19 +1740,19 @@ class QrAdvancedPainter extends CustomPainter {
         return;
       }
 
-
       const double quietModules = 2.0;
       final double qt = qrBox.width / (m + quietModules * 2.0);
-      drawDecorSilhouette(
-      reservedRect: qrBox,
-      moduleStep: qt,
-      );
 
       final Rect qrDataRect = Rect.fromLTWH(
         qrBox.left + qt * quietModules,
         qrBox.top + qt * quietModules,
         qt * m,
         qt * m,
+      );
+
+      drawDecorSilhouette(
+        reservedRect: qrDataRect.inflate(qt * 0.45),
+        moduleStep: qt,
       );
 
       final qrLiquidPen = Paint()
