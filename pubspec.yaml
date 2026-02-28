@@ -1,5 +1,5 @@
-name: qr_app
-description: QR + Logo Real Aura Engine
+name: qr_plus_logo
+description: QR+Logo
 version: 1.0.0+1
 
 environment:
