@@ -137,6 +137,10 @@ class _MainScreenState extends State<MainScreen>
   String _advSubStyle = "Liquid Pro (Gusano)";
   // NUEVO: dirección del split
   String _splitDir = "Vertical";
+  // NUEVO: borde circular para QR Circular
+  bool _circBorder = true;
+  Color _circBorderColor = Colors.black;
+  double _circBorderWidth = 3.0;
 
   late TabController _tabCtrl;
   final GlobalKey _qrKey = GlobalKey();
@@ -596,6 +600,33 @@ class _MainScreenState extends State<MainScreen>
               _subStyleChips(_advSubStyle, (s) => setState(() => _advSubStyle = s)),
             ],
 
+            // Borde circular para QR Circular (NUEVO)
+            if (isCircular) ...[
+              const SizedBox(height: 12),
+              SwitchListTile(
+                title: const Text("Borde circular",
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                value: _circBorder,
+                onChanged: (v) => setState(() => _circBorder = v),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+              if (_circBorder) ...[
+                Row(children: [
+                  const Text("Grosor:", style: TextStyle(fontSize: 13)),
+                  Expanded(child: Slider(
+                    value: _circBorderWidth, min: 1.0, max: 8.0, divisions: 7,
+                    activeColor: Colors.black,
+                    onChanged: (v) => setState(() => _circBorderWidth = v),
+                  )),
+                  Text("${_circBorderWidth.toInt()}px",
+                      style: const TextStyle(fontSize: 12)),
+                ]),
+                _colorRow("Color del borde", _circBorderColor, null,
+                    (c) => setState(() => _circBorderColor = c), null),
+              ],
+            ],
+
             // Dirección del Split (NUEVO)
             if (isSplit) ...[
               const SizedBox(height: 12),
@@ -975,6 +1006,9 @@ class _MainScreenState extends State<MainScreen>
                                 mapSubStyle: _mapSubStyle,
                                 advSubStyle: _advSubStyle,
                                 splitDir: _splitDir,
+                                circBorder: _circBorder,
+                                circBorderColor: _circBorderColor,
+                                circBorderWidth: _circBorderWidth,
                                 logoImage: isShape ? null : _logoImage,
                                 outerMask: isShape ? null : _outerMask,
                                 shapeImage: _shapeImage,
@@ -1479,7 +1513,9 @@ class QrAdvancedPainter extends CustomPainter {
   final List<List<bool>>? outerMask, shapeMask;
   final double logoSize, auraSize;
   final bool customEyes;
-  final Color qrC1, qrC2, eyeExt, eyeInt;
+  final bool circBorder;
+  final Color qrC1, qrC2, eyeExt, eyeInt, circBorderColor;
+  final double circBorderWidth;
 
   const QrAdvancedPainter({
     required this.data,
@@ -1487,6 +1523,9 @@ class QrAdvancedPainter extends CustomPainter {
     required this.mapSubStyle,
     required this.advSubStyle,
     required this.splitDir,
+    required this.circBorder,
+    required this.circBorderColor,
+    required this.circBorderWidth,
     required this.logoImage,
     required this.outerMask,
     required this.shapeImage,
@@ -1866,89 +1905,185 @@ class QrAdvancedPainter extends CustomPainter {
       _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
 
     // ════════════════════════════════════════════════════════════
-    // QR CIRCULAR — Usa algoritmo de Formas con máscara circular precargada
-    // Sub-estilos, logo/aura completos
+    // QR CIRCULAR — QR completo centrado + esquinas rellenas orgánicamente
+    // Ojos en sus posiciones normales, logo central con aura
     // ════════════════════════════════════════════════════════════
     } else if (isCircular) {
-      final int maskW = math.max(size.width.round(), 1);
-      final int maskH = math.max(size.height.round(), 1);
-      // Máscara circular precargada — sin intervención del usuario
-      final canvasMask = _buildCircleMask(maskW, maskH);
+      // El QR se dibuja completo a tamaño normal (ocupa todo el canvas)
+      // El círculo define qué zona es visible; las esquinas se rellenan
+      // orgánicamente con el mismo sub-estilo para dar forma circular.
+
+      final double radius = size.width / 2.0;
+      final double circleCx = size.width / 2.0;
+      final double circleCy = size.height / 2.0;
+
       final excl = _buildLogoExcl(m, t);
 
       EyeStyle eyeStyle = EyeStyle.rect;
       if (advSubStyle.contains("Puntos"))    eyeStyle = EyeStyle.circ;
       if (advSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
 
-      final liquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
-          ..strokeWidth = t..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
+      final liquidPen = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = t
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
       if (grad != null) liquidPen.shader = grad; else liquidPen.color = qrC1;
 
-      bool insideCircle(double px, double py) {
-        final int x = px.floor().clamp(0, maskW - 1).toInt();
-        final int y = py.floor().clamp(0, maskH - 1).toInt();
-        return canvasMask[y][x];
+      // Módulo dentro del círculo inscrito del QR
+      bool moduleInQrCircle(int r, int c) {
+        final double px = (c + 0.5) * t;
+        final double py = (r + 0.5) * t;
+        final double dx = px - circleCx, dy = py - circleCy;
+        return (dx * dx + dy * dy) <= (radius * radius);
       }
 
-      bool moduleInCircle(int r, int c) {
-        // Chequear si el centro del módulo está dentro del círculo
-        final double px = (c + 0.5) * t, py = (r + 0.5) * t;
-        return insideCircle(px, py);
+      // Para módulos de relleno en las esquinas: puntos en la corona
+      // fuera del QR cuadrado pero dentro del círculo grande
+      // Usamos una grilla ligeramente más fina para relleno orgánico
+      final double fillT = t * 0.92; // módulos de relleno levemente más pequeños
+      final int fillCols = (size.width / fillT).ceil() + 2;
+      final int fillRows = (size.height / fillT).ceil() + 2;
+
+      // Área que ocupa el QR cuadrado completo
+      final Rect qrRect = Rect.fromLTWH(0, 0, m * t, m * t);
+
+      // Hash estable para densidad de relleno
+      int fillHash(int fr, int fc) {
+        int v = ((fr + 7) * 73856093) ^ ((fc + 13) * 19349663) ^ (m * 83492791);
+        v ^= (v >> 13); v ^= (v << 7);
+        return v & 0x7fffffff;
       }
 
+      bool fillActive(int fr, int fc) {
+        final double px = fc * fillT + fillT / 2;
+        final double py = fr * fillT + fillT / 2;
+        // Solo en la corona: dentro del círculo pero fuera del QR cuadrado
+        final double dx = px - circleCx, dy = py - circleCy;
+        final bool inCircle = (dx * dx + dy * dy) <= ((radius - t * 0.3) * (radius - t * 0.3));
+        if (!inCircle) return false;
+        if (qrRect.contains(Offset(px, py))) return false;
+        // Densidad ~55% para que se vea orgánico
+        return (fillHash(fr, fc) % 100) < 55;
+      }
+
+      bool fillNeighbor(int fr, int fc, int fr2, int fc2) {
+        if (fr2 < 0 || fr2 >= fillRows || fc2 < 0 || fc2 >= fillCols) return false;
+        return fillActive(fr2, fc2);
+      }
+
+      // 1. Dibujar relleno orgánico en las esquinas (corona)
+      final fillLiquidPath = Path();
+      final fillLiquidPen = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = fillT
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      if (grad != null) fillLiquidPen.shader = grad; else fillLiquidPen.color = qrC1;
+
+      final bool isLiquid   = advSubStyle.contains("Gusano") || advSubStyle.contains("Liquid");
+      final bool isBars     = advSubStyle.contains("Barras");
+      final bool isDots     = advSubStyle.contains("Puntos");
+      final bool isDiamonds = advSubStyle.contains("Diamantes");
+
+      for (int fr = 0; fr < fillRows; fr++) {
+        for (int fc = 0; fc < fillCols; fc++) {
+          if (!fillActive(fr, fc)) continue;
+          final double fx = fc * fillT;
+          final double fy = fr * fillT;
+          final double fcx = fx + fillT / 2;
+          final double fcy = fy + fillT / 2;
+
+          if (isLiquid) {
+            fillLiquidPath.moveTo(fcx, fcy); fillLiquidPath.lineTo(fcx, fcy);
+            if (fillNeighbor(fr, fc, fr, fc + 1)) { fillLiquidPath.moveTo(fcx, fcy); fillLiquidPath.lineTo(fcx + fillT, fcy); }
+            if (fillNeighbor(fr, fc, fr + 1, fc)) { fillLiquidPath.moveTo(fcx, fcy); fillLiquidPath.lineTo(fcx, fcy + fillT); }
+          } else if (isBars) {
+            if (fr == 0 || !fillActive(fr - 1, fc)) {
+              int er = fr; while (er + 1 < fillRows && fillActive(er + 1, fc)) er++;
+              canvas.drawRRect(RRect.fromRectAndRadius(
+                  Rect.fromLTWH(fx + fillT * 0.10, fy, fillT * 0.80, (er - fr + 1) * fillT),
+                  Radius.circular(fillT * 0.38)), solidPaint);
+            }
+          } else if (isDots) {
+            final double h = (fillHash(fr, fc) % 100) / 100.0;
+            canvas.drawCircle(Offset(fcx, fcy), fillT * (0.33 + 0.14 * h), solidPaint);
+          } else if (isDiamonds) {
+            final double h = (fillHash(fr, fc) % 100) / 100.0;
+            final double sc = 0.65 + 0.22 * h; final double off = fillT * (1 - sc) / 2;
+            canvas.drawPath(Path()
+              ..moveTo(fcx, fy + off)..lineTo(fx + fillT - off, fcy)
+              ..lineTo(fcx, fy + fillT - off)..lineTo(fx + off, fcy)..close(), solidPaint);
+          } else {
+            canvas.drawRect(Rect.fromLTWH(fx, fy, fillT + 0.2, fillT + 0.2), solidPaint);
+          }
+        }
+      }
+      if (isLiquid) canvas.drawPath(fillLiquidPath, fillLiquidPen);
+
+      // 2. Dibujar el QR completo (módulos dentro del círculo solamente)
       bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
         if (excl[r][c]) return false;
-        if (!moduleInCircle(r, c)) return false;
-        return true;
+        return true; // No filtramos por círculo — el QR va completo
       }
 
-      // Ghost-dots fuera del círculo (escaneador los lee como blanco)
-      final ghostPaint = Paint()..color = const Color(0xFFF0F0F0)..isAntiAlias = true;
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        if (!qr.isDark(r, c)) continue;
-        if (_isEye(r, c, m)) continue;
-        if (moduleInCircle(r, c)) continue;
-        canvas.drawCircle(Offset(c * t + t / 2, r * t + t / 2), t * 0.40, ghostPaint);
-      }
+      final qrLiquidPath = Path();
 
-      final liquidPath = Path();
-      final bool isLiquid = advSubStyle.contains("Gusano") || advSubStyle.contains("Liquid");
-      final bool isBars = advSubStyle.contains("Barras");
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!darkOk(r, c)) continue;
+          final double x = c * t, y = r * t, cx = x + t / 2, cy = y + t / 2;
 
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        if (!darkOk(r, c)) continue;
-        final double x = c * t, y = r * t, cx = x + t / 2, cy = y + t / 2;
-        if (isLiquid) {
-          liquidPath.moveTo(cx, cy); liquidPath.lineTo(cx, cy);
-          if (darkOk(r, c + 1)) { liquidPath.moveTo(cx, cy); liquidPath.lineTo(cx + t, cy); }
-          if (darkOk(r + 1, c)) { liquidPath.moveTo(cx, cy); liquidPath.lineTo(cx, cy + t); }
-        } else if (isBars) {
-          if (r == 0 || !darkOk(r - 1, c)) {
-            int er = r; while (er + 1 < m && darkOk(er + 1, c)) er++;
-            canvas.drawRRect(RRect.fromRectAndRadius(
-                Rect.fromLTWH(x + t * 0.10, y, t * 0.80, (er - r + 1) * t),
-                Radius.circular(t * 0.38)), solidPaint);
-          }
-        } else if (advSubStyle.contains("Puntos")) {
-          final double h = ((r * 13 + c * 29) % 100) / 100.0;
-          canvas.drawCircle(Offset(cx, cy), t * (0.35 + 0.15 * h), solidPaint);
-        } else if (advSubStyle.contains("Diamantes")) {
-          final double h = ((r * 17 + c * 31) % 100) / 100.0;
-          final double sc = 0.65 + 0.22 * h; final double off = t * (1 - sc) / 2;
-          canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + t - off, cy)
+          if (isLiquid) {
+            qrLiquidPath.moveTo(cx, cy); qrLiquidPath.lineTo(cx, cy);
+            if (darkOk(r, c + 1)) { qrLiquidPath.moveTo(cx, cy); qrLiquidPath.lineTo(cx + t, cy); }
+            if (darkOk(r + 1, c)) { qrLiquidPath.moveTo(cx, cy); qrLiquidPath.lineTo(cx, cy + t); }
+          } else if (isBars) {
+            if (r == 0 || !darkOk(r - 1, c)) {
+              int er = r; while (er + 1 < m && darkOk(er + 1, c)) er++;
+              canvas.drawRRect(RRect.fromRectAndRadius(
+                  Rect.fromLTWH(x + t * 0.10, y, t * 0.80, (er - r + 1) * t),
+                  Radius.circular(t * 0.38)), solidPaint);
+            }
+          } else if (isDots) {
+            final double h = ((r * 13 + c * 29) % 100) / 100.0;
+            canvas.drawCircle(Offset(cx, cy), t * (0.35 + 0.15 * h), solidPaint);
+          } else if (isDiamonds) {
+            final double h = ((r * 17 + c * 31) % 100) / 100.0;
+            final double sc = 0.65 + 0.22 * h; final double off = t * (1 - sc) / 2;
+            canvas.drawPath(Path()
+              ..moveTo(cx, y + off)..lineTo(x + t - off, cy)
               ..lineTo(cx, y + t - off)..lineTo(x + off, cy)..close(), solidPaint);
-        } else {
-          canvas.drawRect(Rect.fromLTWH(x, y, t + 0.2, t + 0.2), solidPaint);
+          } else {
+            canvas.drawRect(Rect.fromLTWH(x, y, t + 0.2, t + 0.2), solidPaint);
+          }
         }
       }
-      if (isLiquid) canvas.drawPath(liquidPath, liquidPen);
+      if (isLiquid) canvas.drawPath(qrLiquidPath, liquidPen);
 
+      // 3. Ojos en posiciones normales
       _drawEye(canvas, 0, 0, t, pE, pI, eyeStyle);
       _drawEye(canvas, (m - 7) * t, 0, t, pE, pI, eyeStyle);
       _drawEye(canvas, 0, (m - 7) * t, t, pE, pI, eyeStyle);
+
+      // 4. Borde circular opcional
+      if (circBorder) {
+        final borderPaint = Paint()
+          ..isAntiAlias = true
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = circBorderWidth
+          ..color = circBorderColor;
+        canvas.drawCircle(
+          Offset(circleCx, circleCy),
+          radius - circBorderWidth / 2,
+          borderPaint,
+        );
+      }
 
     // ════════════════════════════════════════════════════════════
     // SPLIT — Sub-estilos, logo/aura, dirección Vertical/Horizontal/Diagonal
