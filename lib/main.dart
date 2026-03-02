@@ -420,28 +420,29 @@ class _MainScreenState extends State<MainScreen>
           final double nx = (px - cx) / (2 * r);
           return ny >= 0 && ny <= 1 && nx.abs() <= ny * 0.5 + 0.01;
         case "Estrella":
-          final double angle = math.atan2(dy, dx) - math.pi / 2;
+          final double angle = math.atan2(dx, -dy);
           final double dist = math.sqrt(dx * dx + dy * dy);
-          final double section = (angle / (math.pi / 5)).floor() * (math.pi / 5);
-          final double innerR = r * 0.4;
-          final double outerR = r;
-          final double relAngle = angle - section;
-          final double limitR = innerR + (outerR - innerR) *
-              (math.cos(relAngle) / math.cos(math.pi / 5 - relAngle.abs())).clamp(0.0, 1.0);
+          final double sectorAngle = 2 * math.pi / 5;
+          final double normAngle = ((angle % sectorAngle) + sectorAngle) % sectorAngle;
+          final double frac = normAngle <= sectorAngle / 2
+              ? normAngle / (sectorAngle / 2)
+              : (sectorAngle - normAngle) / (sectorAngle / 2);
+          final double limitR = r * 0.97 + (r * 0.42 - r * 0.97) * frac;
           return dist <= limitR;
         case "Corazón":
-          final double nx2 = dx / r, ny2 = dy / r;
-          final double val = (nx2 * nx2 + ny2 * ny2 - 1);
-          return val * val * val - nx2 * nx2 * ny2 * ny2 * ny2 <= 0.08;
+          final double nx2 = dx / (r * 0.85);
+          final double ny2 = -(dy + r * 0.1) / (r * 0.85);
+          final double val = nx2 * nx2 + ny2 * ny2 - 1;
+          return val * val * val - nx2 * nx2 * ny2 * ny2 * ny2 <= 0;
         case "Rombo":
           return dx.abs() / r + dy.abs() / r <= 1.0;
         case "Flecha":
-          final double ny = (py - (cy - r)) / (2 * r);
-          if (ny < 0 || ny > 1) return false;
-          if (ny <= 0.5) {
-            return dx.abs() <= r * (1.0 - ny * 1.6);
+          final double nx = dx / r;
+          final double ny = dy / r;
+          if (ny <= 0.15) {
+            return nx.abs() <= (ny + 1.0) * 0.85;
           } else {
-            return dx.abs() <= r * 0.3;
+            return nx.abs() <= 0.28 && ny <= 0.92;
           }
         case "Pentágono":
           final double angle = math.atan2(dx, -dy);
@@ -1346,8 +1347,17 @@ class StylePreviewPainter extends CustomPainter {
     }
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
-        if (!ok(r, c)) continue;
         final double x = c * t, y = r * t, cx = x + t / 2, cy = y + t / 2;
+        // Formas: bypass inCenter para no tener hueco en el preview
+        if (style.contains("Formas")) {
+          if (!qr.isDark(r, c) || isEye(r, c)) continue;
+          final double ny = (r + 0.5) / m;
+          final double nx = (c + 0.5) / m - 0.5;
+          if (ny < 0.04 || nx.abs() > ny * 0.5 + 0.02) continue;
+          canvas.drawCircle(Offset(cx, cy), t * 0.38, paint);
+          continue;
+        }
+        if (!ok(r, c)) continue;
         if (style.contains("Gusano")) {
           lPath.moveTo(cx, cy); lPath.lineTo(cx, cy);
           if (ok(r, c + 1)) { lPath.moveTo(cx, cy); lPath.lineTo(cx + t, cy); }
@@ -1377,13 +1387,6 @@ class StylePreviewPainter extends CustomPainter {
           if (ok(r, c + 1)) pp.lineTo(cx + t, cy);
           canvas.drawPath(pp, sp);
           if (ok(r + 1, c)) canvas.drawPath(Path()..moveTo(cx, cy)..lineTo(cx, cy + t), sp);
-        } else if (style.contains("Formas")) {
-          // Preview triangular — sin hueco de logo
-          final double ny = (r + 0.5) / m;
-          final double nx = (c + 0.5) / m - 0.5;
-          if (ny < 0.04 || nx.abs() > ny * 0.5 + 0.02) continue;
-          if (isEye(r, c)) continue;
-          canvas.drawCircle(Offset(cx, cy), t * 0.38, paint);
         } else {
           canvas.drawRect(Rect.fromLTWH(x, y, t + 0.3, t + 0.3), paint);
         }
