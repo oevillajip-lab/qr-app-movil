@@ -106,7 +106,7 @@ class _MainScreenState extends State<MainScreen>
 
   String _qrType = "Sitio Web (URL)";
   String _estilo = "Liquid Pro (Gusano)";
-  String _estiloAvz = "QR Circular";
+  String _estiloAvz = "Formas Básicas";
   String _qrColorMode = "Sólido (Un Color)";
   String _qrGradDir = "Vertical";
   Color _qrC1 = Colors.black;
@@ -135,8 +135,12 @@ class _MainScreenState extends State<MainScreen>
 
   // NUEVO: sub-estilos para Split y Circular (separados de Formas)
   String _advSubStyle = "Liquid Pro (Gusano)";
-  // NUEVO: dirección del split
-  String _splitDir = "Vertical";
+
+// NUEVO: forma predefinida para "Formas Básicas"
+String _basicShapeType = "Círculo";
+
+// NUEVO: dirección del split
+String _splitDir = "Vertical";
 
   late TabController _tabCtrl;
   final GlobalKey _qrKey = GlobalKey();
@@ -150,15 +154,15 @@ class _MainScreenState extends State<MainScreen>
   ];
 
   static const _advStyles = [
-    "Liquid Pro (Gusano)",
-    "Normal (Cuadrado)",
-    "Barras (Vertical)",
-    "Circular (Puntos)",
-    "Diamantes (Rombos)",
-    "QR Circular",
-    "Split Liquid (Mitades)",
-    "Formas (Máscara)",
-  ];
+  "Liquid Pro (Gusano)",
+  "Normal (Cuadrado)",
+  "Barras (Vertical)",
+  "Circular (Puntos)",
+  "Diamantes (Rombos)",
+  "Formas Básicas",
+  "Split Liquid (Mitades)",
+  "Formas (Máscara)",
+];
 
   static const _shapeSubStyles = [
     "Liquid Pro (Gusano)",
@@ -167,6 +171,15 @@ class _MainScreenState extends State<MainScreen>
     "Circular (Puntos)",
     "Diamantes (Rombos)",
   ];
+      
+  static const _basicShapeOptions = [
+  "Círculo",
+  "Triángulo",
+  "Estrella",
+  "Rombo",
+  "Pentágono",
+  "Flecha",
+];
 
   @override
   void initState() {
