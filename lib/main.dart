@@ -568,8 +568,8 @@ String _splitDir = "Vertical";
     final isEmpty = data.isEmpty;
     final isShape = _estiloAvz == "Formas (Máscara)";
     final isSplit = _estiloAvz == "Split Liquid (Mitades)";
-    final isCircular = _estiloAvz == "QR Circular";
-    final needsLogo = isSplit || isCircular; // Split y Circular usan logo central
+    final isBasicShape = _estiloAvz == "Formas Básicas";
+    final needsLogo = isSplit || isBasicShape; // Split y Formas Básicas usan logo central
     final effLogo = _effectiveLogo(isShape);
     final limited = _logoBytes != null && !isShape && effLogo < _logoSize - 0.5;
 
@@ -598,8 +598,8 @@ String _splitDir = "Vertical";
               _subStyleChips(_mapSubStyle, (s) => setState(() => _mapSubStyle = s)),
             ],
 
-            // Sub-estilo para Split y Circular (NUEVO)
-            if (isSplit || isCircular) ...[
+            // Sub-estilo para Split y Formas Básicas
+            if (isSplit || isBasicShape) ...[
               const Padding(padding: EdgeInsets.only(top: 14, bottom: 4), child: Divider()),
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
@@ -607,6 +607,42 @@ String _splitDir = "Vertical";
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
               ),
               _subStyleChips(_advSubStyle, (s) => setState(() => _advSubStyle = s)),
+            ],
+
+            // Selector de la figura para Formas Básicas
+            if (isBasicShape) ...[
+              const SizedBox(height: 12),
+              const Text("Elige la figura:",
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  "Círculo", "Triángulo", "Corazón", "Estrella", "Rombo", "Pentágono"
+                ].map((shape) {
+                  final sel = _basicShapeType == shape;
+                  return GestureDetector(
+                    onTap: () => setState(() => _basicShapeType = shape),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: sel ? Colors.black : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: sel ? Colors.black : Colors.grey.shade300,
+                            width: sel ? 2 : 1.5),
+                      ),
+                      child: Text(shape,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: sel ? Colors.white : Colors.black87)),
+                    ),
+                  );
+                }).toList(),
+              ),
             ],
 
             // Dirección del Split (NUEVO)
@@ -831,7 +867,7 @@ String _splitDir = "Vertical";
     if (s.contains("Barras")) return "Barras";
     if (s.contains("Puntos")) return "Círculos";
     if (s.contains("Rombos")) return "Diamantes";
-    if (s.contains("QR Circ")) return "QR Circular";
+    if (s.contains("Formas Básicas")) return "F. Básicas";
     if (s.contains("Split")) return "Split";
     if (s.contains("Formas")) return "Formas";
     return s;
@@ -944,7 +980,7 @@ String _splitDir = "Vertical";
     final isShape = estilo == "Formas (Máscara)";
     final shapeReady = _shapeMask != null && _shapeMask!.isNotEmpty;
     final isAdvStyle = isAdv &&
-        (estilo == "QR Circular" || estilo == "Split Liquid (Mitades)" || isShape);
+        (estilo == "Formas Básicas" || estilo == "Split Liquid (Mitades)" || isShape);
 
     final bgColor = _bgMode == "Transparente"
         ? Colors.transparent
@@ -988,6 +1024,7 @@ String _splitDir = "Vertical";
                                 mapSubStyle: _mapSubStyle,
                                 advSubStyle: _advSubStyle,
                                 splitDir: _splitDir,
+                                basicShapeType: _basicShapeType, // NUEVO
                                 logoImage: isShape ? null : _logoImage,
                                 outerMask: isShape ? null : _outerMask,
                                 shapeImage: _shapeImage,
@@ -1278,15 +1315,24 @@ class StylePreviewPainter extends CustomPainter {
           final double sc = 0.65 + 0.45 * h; final double off = t * (1 - sc) / 2;
           canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + t - off, cy)
               ..lineTo(cx, y + t - off)..lineTo(x + off, cy)..close(), paint);
-        } else if (style == "QR Circular") {
-          final d = math.sqrt(math.pow(c - m / 2, 2) + math.pow(r - m / 2, 2));
-          if (d > m / 2.1) continue;
+        } else if (style == "Formas Básicas") {
+          // Preview: mostramos un triángulo apuntando arriba
+          final double dy = r.toDouble();
+          final double dx = c.toDouble();
+          if (dy < m - dx - m/1.8 || dy < dx - m/2.2) continue;
+
           lPath.moveTo(cx, cy); lPath.lineTo(cx, cy);
-          if (ok(r, c + 1) && math.sqrt(math.pow(c + 1 - m / 2, 2) + math.pow(r - m / 2, 2)) <= m / 2.1) {
-            lPath.moveTo(cx, cy); lPath.lineTo(cx + t, cy);
+          if (ok(r, c + 1)) {
+            final ndx = dx + 1;
+            if (!(dy < m - ndx - m/1.8 || dy < ndx - m/2.2)) {
+              lPath.moveTo(cx, cy); lPath.lineTo(cx + t, cy);
+            }
           }
-          if (ok(r + 1, c) && math.sqrt(math.pow(c - m / 2, 2) + math.pow(r + 1 - m / 2, 2)) <= m / 2.1) {
-            lPath.moveTo(cx, cy); lPath.lineTo(cx, cy + t);
+          if (ok(r + 1, c)) {
+            final ndy = dy + 1;
+            if (!(ndy < m - dx - m/1.8 || ndy < dx - m/2.2)) {
+              lPath.moveTo(cx, cy); lPath.lineTo(cx, cy + t);
+            }
           }
         } else if (style.contains("Split")) {
           final sp = c < m / 2
@@ -1305,12 +1351,12 @@ class StylePreviewPainter extends CustomPainter {
         }
       }
     }
-    if (style.contains("Gusano") || style == "QR Circular") canvas.drawPath(lPath, lPaint);
+    if (style.contains("Gusano") || style == "Formas Básicas") canvas.drawPath(lPath, lPaint);
     final pE = Paint()..isAntiAlias = true;
     final pI = Paint()..isAntiAlias = true;
     if (grad != null) { pE.shader = grad; pI.shader = grad; } else { pE.color = c1; pI.color = c1; }
     EyeStyle es = EyeStyle.rect;
-    if (style.contains("Puntos") || style == "QR Circular") es = EyeStyle.circ;
+    if (style.contains("Puntos") || style == "Formas Básicas") es = EyeStyle.circ;
     if (style.contains("Rombos") || style.contains("Diamant")) es = EyeStyle.diamond;
     void eye(double x, double y) {
       final s = 7 * t;
@@ -1487,7 +1533,7 @@ class QrMasterPainter extends CustomPainter {
 // Split y QR Circular: MEJORADOS con sub-estilos, logo/aura, splitDir
 // ═══════════════════════════════════════════════════════════════════
 class QrAdvancedPainter extends CustomPainter {
-  final String data, estiloAvanzado, mapSubStyle, advSubStyle, splitDir, qrMode, qrDir;
+  final String data, estiloAvanzado, mapSubStyle, advSubStyle, splitDir, basicShapeType, qrMode, qrDir;
   final img_lib.Image? logoImage, shapeImage;
   final List<List<bool>>? outerMask, shapeMask;
   final double logoSize, auraSize;
@@ -1500,6 +1546,7 @@ class QrAdvancedPainter extends CustomPainter {
     required this.mapSubStyle,
     required this.advSubStyle,
     required this.splitDir,
+    required this.basicShapeType,
     required this.logoImage,
     required this.outerMask,
     required this.shapeImage,
@@ -1606,14 +1653,54 @@ class QrAdvancedPainter extends CustomPainter {
     return canvasMask;
   }
 
-  // Genera máscara circular precargada para QR Circular
-  List<List<bool>> _buildCircleMask(int width, int height) {
+  // Genera máscara precargada para Formas Básicas usando Path
+  List<List<bool>> _buildBasicShapeMask(int width, int height, String shape) {
     final mask = List.generate(height, (_) => List.filled(width, false));
     final double cx = width / 2.0, cy = height / 2.0;
-    final double r = math.min(width, height) / 2.0 - 1;
-    for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
-      final double dx = (x + 0.5) - cx, dy = (y + 0.5) - cy;
-      mask[y][x] = (dx * dx + dy * dy) <= (r * r);
+    final double R = math.min(width, height) / 2.0 - 2;
+    final Path p = Path();
+
+    if (shape == "Triángulo") {
+      p.moveTo(cx, cy - R * 0.9);
+      p.lineTo(cx + R * 0.95, cy + R * 0.85);
+      p.lineTo(cx - R * 0.95, cy + R * 0.85);
+      p.close();
+    } else if (shape == "Rombo") {
+      p.moveTo(cx, cy - R); p.lineTo(cx + R, cy);
+      p.lineTo(cx, cy + R); p.lineTo(cx - R, cy); p.close();
+    } else if (shape == "Corazón") {
+      p.moveTo(cx, cy + R * 0.7);
+      p.cubicTo(cx + R * 1.2, cy + R * 0.1, cx + R * 1.2, cy - R * 0.8, cx, cy - R * 0.3);
+      p.cubicTo(cx - R * 1.2, cy - R * 0.8, cx - R * 1.2, cy + R * 0.1, cx, cy + R * 0.7);
+      p.close();
+    } else if (shape == "Estrella") {
+      for (int i = 0; i < 10; i++) {
+        double a = -math.pi / 2.0 + i * math.pi / 5.0;
+        double r = (i % 2 == 0) ? R : R * 0.45;
+        if (i == 0) p.moveTo(cx + r * math.cos(a), cy + r * math.sin(a));
+        else p.lineTo(cx + r * math.cos(a), cy + r * math.sin(a));
+      }
+      p.close();
+    } else if (shape == "Pentágono") {
+      for (int i = 0; i < 5; i++) {
+        double a = -math.pi / 2.0 + i * 2.0 * math.pi / 5.0;
+        if (i == 0) p.moveTo(cx + R * math.cos(a), cy + R * math.sin(a));
+        else p.lineTo(cx + R * math.cos(a), cy + R * math.sin(a));
+      }
+      p.close();
+    } else if (shape == "Flecha") {
+      p.moveTo(cx, cy - R * 0.9); p.lineTo(cx + R * 0.7, cy - R * 0.1);
+      p.lineTo(cx + R * 0.3, cy - R * 0.1); p.lineTo(cx + R * 0.3, cy + R * 0.9);
+      p.lineTo(cx - R * 0.3, cy + R * 0.9); p.lineTo(cx - R * 0.3, cy - R * 0.1);
+      p.lineTo(cx - R * 0.7, cy - R * 0.1); p.close();
+    } else { // Círculo u otro
+      p.addOval(Rect.fromCircle(center: Offset(cx, cy), radius: R));
+    }
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        mask[y][x] = p.contains(Offset(x + 0.5, y + 0.5));
+      }
     }
     return mask;
   }
@@ -1662,7 +1749,7 @@ class QrAdvancedPainter extends CustomPainter {
         estiloAvanzado.contains("Mapa") ||
         estiloAvanzado == "Formas (Máscara)";
     final bool isSplit = estiloAvanzado.contains("Split");
-    final bool isCircular = estiloAvanzado == "QR Circular";
+    final bool isBasicShape = estiloAvanzado == "Formas Básicas";
 
     ui.Shader? grad;
     if (qrMode == "Degradado Custom") {
@@ -1879,14 +1966,14 @@ class QrAdvancedPainter extends CustomPainter {
       _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
 
     // ════════════════════════════════════════════════════════════
-    // QR CIRCULAR — Usa algoritmo de Formas con máscara circular precargada
+    // FORMAS BÁSICAS — Algoritmo orgánico con máscaras de figuras precargadas
     // Sub-estilos, logo/aura completos
     // ════════════════════════════════════════════════════════════
-    } else if (isCircular) {
+    } else if (isBasicShape) {
       final int maskW = math.max(size.width.round(), 1);
       final int maskH = math.max(size.height.round(), 1);
-      // Máscara circular precargada — sin intervención del usuario
-      final canvasMask = _buildCircleMask(maskW, maskH);
+      // Generamos la máscara dinámica según la forma elegida
+      final canvasMask = _buildBasicShapeMask(maskW, maskH, basicShapeType);
       final excl = _buildLogoExcl(m, t);
 
       EyeStyle eyeStyle = EyeStyle.rect;
@@ -1897,33 +1984,34 @@ class QrAdvancedPainter extends CustomPainter {
           ..strokeWidth = t..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
       if (grad != null) liquidPen.shader = grad; else liquidPen.color = qrC1;
 
-      bool insideCircle(double px, double py) {
+      bool insideShape(double px, double py) {
         final int x = px.floor().clamp(0, maskW - 1).toInt();
         final int y = py.floor().clamp(0, maskH - 1).toInt();
         return canvasMask[y][x];
       }
 
-      bool moduleInCircle(int r, int c) {
-        // Chequear si el centro del módulo está dentro del círculo
+      bool moduleInShape(int r, int c) {
+        // Chequear si el centro del módulo cae dentro de la figura elegida
         final double px = (c + 0.5) * t, py = (r + 0.5) * t;
-        return insideCircle(px, py);
+        return insideShape(px, py);
       }
 
       bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
-        if (_isEye(r, c, m)) return false;
+        // La regla de oro: los ojos de las 3 esquinas quedan excluidos del recorte y SIEMPRE se dibujan
+        if (_isEye(r, c, m)) return false; 
         if (excl[r][c]) return false;
-        if (!moduleInCircle(r, c)) return false;
+        if (!moduleInShape(r, c)) return false;
         return true;
       }
 
-      // Ghost-dots fuera del círculo (escaneador los lee como blanco)
+      // Ghost-dots fuera de la figura (ayuda a que el escáner lo lea mejor)
       final ghostPaint = Paint()..color = const Color(0xFFF0F0F0)..isAntiAlias = true;
       for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
-        if (moduleInCircle(r, c)) continue;
+        if (moduleInShape(r, c)) continue;
         canvas.drawCircle(Offset(c * t + t / 2, r * t + t / 2), t * 0.40, ghostPaint);
       }
 
