@@ -830,14 +830,16 @@ String _splitDir = "Vertical";
                         child: CustomPaint(
                             painter: StylePreviewPainter(style: style, c1: _qrC1, c2: _qrC2)),
                       ),
-                      if (_logoBytes != null)
-                        SizedBox(width: 24, height: 24,
-                            child: Image.memory(_logoBytes!, fit: BoxFit.contain))
-                      else
-                        const Text("LOGO",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900,
-                                color: Colors.black, letterSpacing: 0.5)),
+                      if (style != "Formas (Máscara)") ...[
+                        if (_logoBytes != null)
+                          SizedBox(width: 24, height: 24,
+                              child: Image.memory(_logoBytes!, fit: BoxFit.contain))
+                        else
+                          const Text("LOGO",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900,
+                                  color: Colors.black, letterSpacing: 0.5)),
+                      ],
                     ]),
                   ),
                 ),
@@ -1749,11 +1751,10 @@ class QrAdvancedPainter extends CustomPainter {
     final int m = qr.moduleCount;
     final double t = size.width / m;
 
-    final bool isShape = estiloAvanzado.contains("Forma") ||
-        estiloAvanzado.contains("Mapa") ||
-        estiloAvanzado == "Formas (Máscara)";
-    final bool isSplit = estiloAvanzado.contains("Split");
+    // ¡AQUÍ ESTABA EL ERROR! Separación estricta para que no se mezclen jamás
     final bool isBasicShape = estiloAvanzado == "Formas Básicas";
+    final bool isShape = estiloAvanzado == "Formas (Máscara)" || estiloAvanzado.contains("Mapa");
+    final bool isSplit = estiloAvanzado.contains("Split");
 
     ui.Shader? grad;
     if (qrMode == "Degradado Custom") {
