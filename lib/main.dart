@@ -14,13 +14,13 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 
 void main() => runApp(
-      const MaterialApp(
+      MaterialApp(
         title: 'QR+Logo',
-        home: SplashScreen(),
+        home: const SplashScreen(),
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           fontFamily: 'SF Pro Display',
-          scaffoldBackgroundColor: Color(0xFF0A0A0A),
+          scaffoldBackgroundColor: const Color(0xFF0A0A0A),
         ),
       ),
     );
