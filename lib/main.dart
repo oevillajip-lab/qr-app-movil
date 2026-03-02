@@ -1049,7 +1049,7 @@ String _splitDir = "Vertical";
                                 eyeExt: _eyeExt, eyeInt: _eyeInt,
                               ),
                       ),
-                      if (_logoBytes != null && !isShape)
+                      if (_logoBytes != null && estilo != "Formas (Máscara)")
                         SizedBox(width: effLogo, height: effLogo,
                             child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
                     ]),
@@ -1316,23 +1316,27 @@ class StylePreviewPainter extends CustomPainter {
           canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + t - off, cy)
               ..lineTo(cx, y + t - off)..lineTo(x + off, cy)..close(), paint);
         } else if (style == "Formas Básicas") {
-          // Preview: mostramos un triángulo apuntando arriba
-          final double dy = r.toDouble();
-          final double dx = c.toDouble();
-          if (dy < m - dx - m/1.8 || dy < dx - m/2.2) continue;
+          // Preview: Círculo perfecto orgánico que envuelve los ojos
+          final double nx = (c - m / 2) / (m / 2);
+          final double ny = (r - m / 2) / (m / 2);
+          bool inShape = (nx * nx + ny * ny) <= 1.25;
+          // Siempre proteger las 3 esquinas (ojos)
+          if ((r < 8 && c < 8) || (r < 8 && c >= m - 8) || (r >= m - 8 && c < 8)) inShape = true;
+
+          if (!inShape) continue;
 
           lPath.moveTo(cx, cy); lPath.lineTo(cx, cy);
           if (ok(r, c + 1)) {
-            final ndx = dx + 1;
-            if (!(dy < m - ndx - m/1.8 || dy < ndx - m/2.2)) {
-              lPath.moveTo(cx, cy); lPath.lineTo(cx + t, cy);
-            }
+             double nx1 = ((c + 1) - m / 2) / (m / 2);
+             if ((nx1 * nx1 + ny * ny) <= 1.25 || (r < 8 && c + 1 < 8) || (r < 8 && c + 1 >= m - 8) || (r >= m - 8 && c + 1 < 8)) {
+                 lPath.moveTo(cx, cy); lPath.lineTo(cx + t, cy);
+             }
           }
           if (ok(r + 1, c)) {
-            final ndy = dy + 1;
-            if (!(ndy < m - dx - m/1.8 || ndy < dx - m/2.2)) {
-              lPath.moveTo(cx, cy); lPath.lineTo(cx, cy + t);
-            }
+             double ny1 = ((r + 1) - m / 2) / (m / 2);
+             if ((nx * nx + ny1 * ny1) <= 1.25 || (r + 1 < 8 && c < 8) || (r + 1 < 8 && c >= m - 8) || (r + 1 >= m - 8 && c < 8)) {
+                 lPath.moveTo(cx, cy); lPath.lineTo(cx, cy + t);
+             }
           }
         } else if (style.contains("Split")) {
           final sp = c < m / 2
@@ -1966,14 +1970,10 @@ class QrAdvancedPainter extends CustomPainter {
       _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
 
     // ════════════════════════════════════════════════════════════
-    // FORMAS BÁSICAS — Algoritmo orgánico con máscaras de figuras precargadas
+    // FORMAS BÁSICAS — Algoritmo orgánico puro
     // Sub-estilos, logo/aura completos
     // ════════════════════════════════════════════════════════════
     } else if (isBasicShape) {
-      final int maskW = math.max(size.width.round(), 1);
-      final int maskH = math.max(size.height.round(), 1);
-      // Generamos la máscara dinámica según la forma elegida
-      final canvasMask = _buildBasicShapeMask(maskW, maskH, basicShapeType);
       final excl = _buildLogoExcl(m, t);
 
       EyeStyle eyeStyle = EyeStyle.rect;
@@ -1984,35 +1984,54 @@ class QrAdvancedPainter extends CustomPainter {
           ..strokeWidth = t..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
       if (grad != null) liquidPen.shader = grad; else liquidPen.color = qrC1;
 
-      bool insideShape(double px, double py) {
-        final int x = px.floor().clamp(0, maskW - 1).toInt();
-        final int y = py.floor().clamp(0, maskH - 1).toInt();
-        return canvasMask[y][x];
-      }
-
+      // Generación 100% matemática, rapidísima e independiente de las imágenes subidas
       bool moduleInShape(int r, int c) {
-        // Chequear si el centro del módulo cae dentro de la figura elegida
-        final double px = (c + 0.5) * t, py = (r + 0.5) * t;
-        return insideShape(px, py);
+        // REGLA DE ORO: Los 3 ojos jamás quedan afuera
+        if (r < 8 && c < 8) return true;
+        if (r < 8 && c >= m - 8) return true;
+        if (r >= m - 8 && c < 8) return true;
+
+        final double nx = (c - m / 2.0) / (m / 2.0); // -1.0 a 1.0
+        final double ny = (r - m / 2.0) / (m / 2.0); // -1.0 a 1.0
+
+        if (basicShapeType == "Triángulo") {
+          return ny - nx <= 1.0 && ny + nx <= 1.0 && ny >= -0.8;
+        } else if (basicShapeType == "Rombo") {
+          return nx.abs() + ny.abs() <= 1.35;
+        } else if (basicShapeType == "Corazón") {
+          final double x = nx * 1.2;
+          final double y = -ny * 1.2;
+          final double eq = x * x + y * y - 1.0;
+          return eq * eq * eq - x * x * y * y * y <= 0.15;
+        } else if (basicShapeType == "Estrella") {
+          return nx.abs() * ny.abs() <= 0.4 || nx.abs() + ny.abs() <= 1.2;
+        } else if (basicShapeType == "Pentágono") {
+          return ny <= 0.9 && ny - 1.5 * nx <= 1.2 && ny + 1.5 * nx <= 1.2;
+        } else if (basicShapeType == "Flecha") {
+          if (nx.abs() <= 0.3 && ny >= -0.2 && ny <= 0.9) return true;
+          if (ny <= -0.2 && ny - nx <= 0.7 && ny + nx <= 0.7 && ny >= -0.9) return true;
+          return false;
+        }
+        // Círculo por defecto
+        return (nx * nx + ny * ny) <= 1.3;
       }
 
       bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
-        // La regla de oro: los ojos de las 3 esquinas quedan excluidos del recorte y SIEMPRE se dibujan
-        if (_isEye(r, c, m)) return false; 
+        if (_isEye(r, c, m)) return false;
         if (excl[r][c]) return false;
         if (!moduleInShape(r, c)) return false;
         return true;
       }
 
-      // Ghost-dots fuera de la figura (ayuda a que el escáner lo lea mejor)
-      final ghostPaint = Paint()..color = const Color(0xFFF0F0F0)..isAntiAlias = true;
+      // Fantasmas para garantizar la lectura de áreas vacías
+      final ghostPaint = Paint()..color = const Color(0xFFF4F4F4)..isAntiAlias = true;
       for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
         if (moduleInShape(r, c)) continue;
-        canvas.drawCircle(Offset(c * t + t / 2, r * t + t / 2), t * 0.40, ghostPaint);
+        canvas.drawCircle(Offset(c * t + t / 2, r * t + t / 2), t * 0.35, ghostPaint);
       }
 
       final liquidPath = Path();
