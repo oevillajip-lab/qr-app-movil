@@ -1994,12 +1994,12 @@ Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
 qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
 qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
 
-      if (qrBox == null) {   // Forzar QR centrado al 65% del canvas como fallback   final double side = size.width * 0.65;   final double left = (size.width - side) / 2;   final double top = (size.height - side) / 2;   qrBox = Rect.fromLTWH(left, top, side, side); }
+      if (qrBox == null) {         final double side = size.width * 0.65;         final double left = (size.width - side) / 2;         final double top = (size.height - side) / 2;         qrBox = Rect.fromLTWH(left, top, side, side);       }       final Rect qrBoxFinal = qrBox!;
 
       const double quietModules = 3.5;
-      final double qt = qrBox.width / (m + quietModules * 2.0);
+      final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
       final Rect qrDataRect = Rect.fromLTWH(
-          qrBox.left + qt * quietModules, qrBox.top + qt * quietModules, qt * m, qt * m);
+          qrBoxFinal.left + qt * quietModules, qrBoxFinal.top + qt * quietModules, qt * m, qt * m);
 
       drawDecorSilhouette(reservedRect: qrDataRect.inflate(qt * 2.0), moduleStep: qt);
 
