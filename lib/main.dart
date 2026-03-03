@@ -358,51 +358,58 @@ class _MainScreenState extends State<MainScreen>
     final double cx = sz / 2.0, cy = sz / 2.0, r = sz / 2.0 - 2;
 
     bool inside(int x, int y) {
-      final double px = x + 0.5, py = y + 0.5;
-      final double dx = px - cx, dy = py - cy;
-      switch (shape) {
-        case "Círculo":
-          return dx * dx + dy * dy <= r * r;
-        case "Triángulo":
-          final double ny = (py - (cy - r)) / (2 * r);
-          final double nx = (px - cx) / (2 * r);
-          return ny >= 0 && ny <= 1 && nx.abs() <= ny * 0.5 + 0.01;
-        case "Estrella":
-          final double angle = math.atan2(dx, -dy);
-          final double dist = math.sqrt(dx * dx + dy * dy);
-          final double sectorAngle = 2 * math.pi / 5;
-          final double normAngle = ((angle % sectorAngle) + sectorAngle) % sectorAngle;
-          final double frac = normAngle <= sectorAngle / 2
-              ? normAngle / (sectorAngle / 2)
-              : (sectorAngle - normAngle) / (sectorAngle / 2);
-          final double limitR = r * 0.97 + (r * 0.42 - r * 0.97) * frac;
-          return dist <= limitR;
-        case "Corazón":
-          final double nx2 = dx / (r * 0.85);
-          final double ny2 = -(dy + r * 0.1) / (r * 0.85);
-          final double val = nx2 * nx2 + ny2 * ny2 - 1;
-          return val * val * val - nx2 * nx2 * ny2 * ny2 * ny2 <= 0;
-        case "Rombo":
-          return dx.abs() / r + dy.abs() / r <= 1.0;
-        case "Flecha":
-          final double nx = dx / r;
-          final double ny = dy / r;
-          if (ny <= 0.15) {
-            return nx.abs() <= (ny + 1.0) * 0.85;
-          } else {
-            return nx.abs() <= 0.28 && ny <= 0.92;
-          }
-        case "Pentágono":
-          final double angle = math.atan2(dx, -dy);
-          final double dist = math.sqrt(dx * dx + dy * dy);
-          final double section = (angle / (2 * math.pi / 5)).floor() * (2 * math.pi / 5);
-          final double relAngle = angle - section - math.pi / 5;
-          final double limitR = r * math.cos(math.pi / 5) / math.cos(relAngle.clamp(-math.pi / 5, math.pi / 5));
-          return dist <= limitR;
-        default:
-          return false;
+  final double px = x + 0.5, py = y + 0.5;
+  final double dx = px - cx, dy = py - cy;
+  final double dist = math.sqrt(dx * dx + dy * dy);
+  switch (shape) {
+    case "Círculo":
+      return dist <= r;
+    case "Triángulo":
+      // Equilátero centrado, punta arriba
+      final double h = r * math.sqrt(3) / 2;
+      final double topY = cy - h * 2 / 3;
+      final double botY = cy + h / 3;
+      if (py < topY || py > botY) return false;
+      final double progress = (py - topY) / (botY - topY);
+      final double halfW = progress * r;
+      return (px - cx).abs() <= halfW;
+    case "Rombo":
+      return dx.abs() / r + dy.abs() / r <= 1.0;
+    case "Estrella":
+      // 5 puntas perfecta
+      final double angle = math.atan2(dx, -dy);
+      final double sector = math.pi * 2 / 5;
+      final double normAngle = ((angle % sector) + sector) % sector;
+      final double t = normAngle <= sector / 2
+          ? normAngle / (sector / 2)
+          : (sector - normAngle) / (sector / 2);
+      final double limitR = r * 0.42 + (r * 0.97 - r * 0.42) * t;
+      return dist <= limitR;
+    case "Corazón":
+      // Corazón matemático clásico
+      final double nx = dx / (r * 0.78);
+      final double ny = -(dy - r * 0.15) / (r * 0.78);
+      final double val = nx * nx + ny * ny - 1;
+      return val * val * val <= nx * nx * ny * ny * ny;
+    case "Flecha":
+      // Punta derecha, base izquierda
+      final double nx2 = dx / r;
+      final double ny2 = dy / r;
+      if (nx2 >= -0.1) {
+        return ny2.abs() <= (1.0 - nx2) * 0.85;
+      } else {
+        return ny2.abs() <= 0.30;
       }
-    }
+    case "Pentágono":
+      final double a0 = math.atan2(dx, -dy);
+      final double sec = (2 * math.pi / 5);
+      final double rel = ((a0 % sec) + sec) % sec - sec / 2;
+      final double lim = r * math.cos(math.pi / 5) / math.cos(rel.clamp(-math.pi/5, math.pi/5));
+      return dist <= lim;
+    default:
+      return false;
+  }
+}
 
     for (int y = 0; y < sz; y++) for (int x = 0; x < sz; x++) {
       if (inside(x, y)) img.setPixelRgba(x, y, 255, 255, 255, 255);
@@ -1978,23 +1985,23 @@ class QrAdvancedPainter extends CustomPainter {
         }
       }
 
-      final int preferredSide = math.min(math.min(maskW, maskH),
-          math.max(((m + 4) * 3.4).round(), 96)).toInt();
-      final int relaxedSide = math.min(math.min(maskW, maskH),
-          math.max(((m + 4) * 2.8).round(), 76)).toInt();
+final int preferredSide = math.min(math.min(maskW, maskH),
+    math.max(((m + 4) * 2.8).round(), 80)).toInt();
+final int relaxedSide = math.min(math.min(maskW, maskH),
+    math.max(((m + 4) * 2.2).round(), 60)).toInt();
 
-      Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
-      qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
-      qrBox ??= _findBestQrSquare(canvasMask, minSide: 72, step: 2);
+Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
+qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
+qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
 
-      if (qrBox == null) { drawDecorSilhouette(moduleStep: size.width / (m + 6.0)); return; }
+      if (qrBox == null) {   // Forzar QR centrado al 65% del canvas como fallback   final double side = size.width * 0.65;   final double left = (size.width - side) / 2;   final double top = (size.height - side) / 2;   qrBox = Rect.fromLTWH(left, top, side, side); }
 
-      const double quietModules = 2.0;
+      const double quietModules = 3.5;
       final double qt = qrBox.width / (m + quietModules * 2.0);
       final Rect qrDataRect = Rect.fromLTWH(
           qrBox.left + qt * quietModules, qrBox.top + qt * quietModules, qt * m, qt * m);
 
-      drawDecorSilhouette(reservedRect: qrDataRect.inflate(qt * 0.25), moduleStep: qt);
+      drawDecorSilhouette(reservedRect: qrDataRect.inflate(qt * 2.0), moduleStep: qt);
 
       final qrLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
           ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
