@@ -1823,9 +1823,10 @@ class QrAdvancedPainter extends CustomPainter {
     final int safeMin = minSide.clamp(1, maxSide).toInt();
     for (int side = maxSide; side >= safeMin; side -= step) {
       Rect? best; double bestDist = double.infinity;
+      final int required = (side * side * 0.88).round();
       for (int top = 0; top <= h - side; top += step)
         for (int left = 0; left <= w - side; left += step) {
-          if (areaSum(left, top, side) != side * side) continue;
+          if (areaSum(left, top, side) < required) continue;
           final double cx = left + side / 2.0, cy = top + side / 2.0;
           final double dx = cx - w / 2.0, dy = cy - h / 2.0;
           final double dist = dx * dx + dy * dy;
@@ -1996,7 +1997,7 @@ qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
 
       if (qrBox == null) {         final double side = size.width * 0.65;         final double left = (size.width - side) / 2;         final double top = (size.height - side) / 2;         qrBox = Rect.fromLTWH(left, top, side, side);       }       final Rect qrBoxFinal = qrBox!;
 
-      const double quietModules = 3.5;
+      const double quietModules = 1.5;
       final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
       final Rect qrDataRect = Rect.fromLTWH(
           qrBoxFinal.left + qt * quietModules, qrBoxFinal.top + qt * quietModules, qt * m, qt * m);
@@ -2011,6 +2012,10 @@ qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
+        // Verificar que el módulo esté dentro de la forma
+        final double mx = qrDataRect.left + c * qt + qt * 0.5;
+        final double my = qrDataRect.top + r * qt + qt * 0.5;
+        if (!insideShapePoint(mx, my)) return false;
         return true;
       }
 
