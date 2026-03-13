@@ -480,8 +480,12 @@ double size = 1024,
   // UTILIDADES
   // ═══════════════════════════════════════════════════════════════
 
-  static bool _isEye(int r, int c, int m) =>
-      static bool _isReservedCenterModule(
+   static bool _isEye(int r, int c, int m) =>
+      (r < 7 && c < 7) ||
+      (r < 7 && c >= m - 7) ||
+      (r >= m - 7 && c < 7);
+
+  static bool _isReservedCenterModule(
     int r,
     int c,
     int m, {
@@ -504,9 +508,6 @@ double size = 1024,
 
     return nx >= minX && nx <= maxX && ny >= minY && ny <= maxY;
   }
-      (r < 7 && c < 7) ||
-      (r < 7 && c >= m - 7) ||
-      (r >= m - 7 && c < 7);
 
   // Color a hex SVG
   static String _hex(Color c) {
