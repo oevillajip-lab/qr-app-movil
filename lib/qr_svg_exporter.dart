@@ -46,9 +46,10 @@ class QrSvgExporter {
     required Color eyeInt,
     String? mapSubStyle,
     String? advSubStyle,
-    Uint8List? logoBytes,      // PNG del logo (null = sin logo)
-    double logoSizeFrac = 0.0, // fracción del canvas (0.0–0.52)
-    double size = 1024,
+Uint8List? logoBytes,      // PNG del logo (null = sin logo)
+double logoSizeFrac = 0.0, // fracción del canvas (0.0–0.52)
+double logoAuraModules = 0.0,
+double size = 1024,
   }) {
     // Construir matriz QR
     final qrCode = QrCode.fromData(
@@ -98,8 +99,7 @@ class QrSvgExporter {
         ? 'url(#qrGrad)'
         : _hex(qrC1);
 
-    // ── Determinar qué helper llamar ────────────────────────────────
-    // ── Resolver estilo real para SVG ───────────────────────────────
+        // ── Resolver estilo real para SVG ───────────────────────────────
     final bool isSplitStyle = estilo.contains("Split");
     final bool isShapeStyle =
         estilo.contains("Forma") || estilo.contains("Mapa");
@@ -117,17 +117,58 @@ class QrSvgExporter {
     final bool isDiamonds =
         effectiveStyle.contains("Diamantes") || effectiveStyle.contains("Rombos");
 
+    final double effectiveLogoFrac =
+        (logoBytes != null && logoSizeFrac > 0) ? logoSizeFrac : 0.0;
+    final double effectiveAuraModules =
+        (logoBytes != null && logoSizeFrac > 0) ? logoAuraModules : 0.0;
+
     // ── Módulos (sin ojos) ──────────────────────────────────────────
     if (isLiquid) {
-      buf.write(_drawLiquid(qr, m, t, qrFill, size));
+      buf.write(_drawLiquid(
+        qr,
+        m,
+        t,
+        qrFill,
+        size,
+        logoSizeFrac: effectiveLogoFrac,
+        logoAuraModules: effectiveAuraModules,
+      ));
     } else if (isBars) {
-      buf.write(_drawBars(qr, m, t, qrFill));
+      buf.write(_drawBars(
+        qr,
+        m,
+        t,
+        qrFill,
+        logoSizeFrac: effectiveLogoFrac,
+        logoAuraModules: effectiveAuraModules,
+      ));
     } else if (isDots) {
-      buf.write(_drawDots(qr, m, t, qrFill));
+      buf.write(_drawDots(
+        qr,
+        m,
+        t,
+        qrFill,
+        logoSizeFrac: effectiveLogoFrac,
+        logoAuraModules: effectiveAuraModules,
+      ));
     } else if (isDiamonds) {
-      buf.write(_drawDiamonds(qr, m, t, qrFill));
+      buf.write(_drawDiamonds(
+        qr,
+        m,
+        t,
+        qrFill,
+        logoSizeFrac: effectiveLogoFrac,
+        logoAuraModules: effectiveAuraModules,
+      ));
     } else {
-      buf.write(_drawSquares(qr, m, t, qrFill));
+      buf.write(_drawSquares(
+        qr,
+        m,
+        t,
+        qrFill,
+        logoSizeFrac: effectiveLogoFrac,
+        logoAuraModules: effectiveAuraModules,
+      ));
     }
 
     // ── Ojos ────────────────────────────────────────────────────────
@@ -161,13 +202,29 @@ class QrSvgExporter {
   // ═══════════════════════════════════════════════════════════════
 
   // ── Normal: rectángulos ─────────────────────────────────────────
-  static String _drawSquares(QrImage qr, int m, double t, String fill) {
+  static String _drawSquares(
+    QrImage qr,
+    int m,
+    double t,
+    String fill, {
+    double logoSizeFrac = 0.0,
+    double logoAuraModules = 0.0,
+  }) {
     final buf = StringBuffer();
     buf.writeln('<g fill="$fill">');
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
+        if (_isReservedCenterModule(
+          r,
+          c,
+          m,
+          logoSizeFrac: logoSizeFrac,
+          logoAuraModules: logoAuraModules,
+        )) {
+          continue;
+        }
         final double x = c * t, y = r * t;
         buf.writeln('  <rect x="${_f(x)}" y="${_f(y)}" '
             'width="${_f(t)}" height="${_f(t)}"/>');
@@ -178,33 +235,48 @@ class QrSvgExporter {
   }
 
   // ── Liquid / Gusano: paths con stroke redondeado ────────────────
-  static String _drawLiquid(QrImage qr, int m, double t, String fill, double size) {
-    // Construimos un path SVG con líneas entre módulos vecinos activos
-    // stroke-width = t, stroke-linecap = round → efecto gusano
+    static String _drawLiquid(
+    QrImage qr,
+    int m,
+    double t,
+    String fill,
+    double size, {
+    double logoSizeFrac = 0.0,
+    double logoAuraModules = 0.0,
+  }) {
     final segs = StringBuffer();
+
     bool ok(int r, int c) {
       if (r < 0 || r >= m || c < 0 || c >= m) return false;
       if (!qr.isDark(r, c)) return false;
       if (_isEye(r, c, m)) return false;
+      if (_isReservedCenterModule(
+        r,
+        c,
+        m,
+        logoSizeFrac: logoSizeFrac,
+        logoAuraModules: logoAuraModules,
+      )) {
+        return false;
+      }
       return true;
     }
+
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         if (!ok(r, c)) continue;
         final double cx = c * t + t / 2;
         final double cy = r * t + t / 2;
-        // Punto solo (dot)
         segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy)} ');
-        // Vecino derecho
         if (ok(r, c + 1)) {
           segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx + t)} ${_f(cy)} ');
         }
-        // Vecino abajo
         if (ok(r + 1, c)) {
           segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy + t)} ');
         }
       }
     }
+
     final sw = _f(t);
     return '<path d="${segs.toString().trim()}" '
         'stroke="$fill" stroke-width="$sw" '
@@ -212,42 +284,85 @@ class QrSvgExporter {
   }
 
   // ── Barras verticales ───────────────────────────────────────────
-  static String _drawBars(QrImage qr, int m, double t, String fill) {
+    static String _drawBars(
+    QrImage qr,
+    int m,
+    double t,
+    String fill, {
+    double logoSizeFrac = 0.0,
+    double logoAuraModules = 0.0,
+  }) {
     final buf = StringBuffer();
     final drawn = List.generate(m, (_) => List.filled(m, false));
     buf.writeln('<g fill="$fill">');
+
+    bool reserved(int r, int c) => _isReservedCenterModule(
+          r,
+          c,
+          m,
+          logoSizeFrac: logoSizeFrac,
+          logoAuraModules: logoAuraModules,
+        );
+
     for (int c = 0; c < m; c++) {
       for (int r = 0; r < m; r++) {
         if (drawn[r][c]) continue;
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
-        // Buscar largo de la barra
+        if (reserved(r, c)) continue;
+
         int er = r;
-        while (er + 1 < m && qr.isDark(er + 1, c) &&
-               !_isEye(er + 1, c, m) && !drawn[er + 1][c]) er++;
-        for (int k = r; k <= er; k++) drawn[k][c] = true;
+        while (er + 1 < m &&
+            qr.isDark(er + 1, c) &&
+            !_isEye(er + 1, c, m) &&
+            !drawn[er + 1][c] &&
+            !reserved(er + 1, c)) {
+          er++;
+        }
+
+        for (int k = r; k <= er; k++) {
+          drawn[k][c] = true;
+        }
+
         final double x = c * t + t * 0.1;
         final double y = r * t;
         final double w = t * 0.8;
         final double h = (er - r + 1) * t;
         final double rx = t * 0.38;
+
         buf.writeln('  <rect x="${_f(x)}" y="${_f(y)}" '
             'width="${_f(w)}" height="${_f(h)}" '
             'rx="${_f(rx)}" ry="${_f(rx)}"/>');
       }
     }
+
     buf.writeln('</g>');
     return buf.toString();
   }
-
   // ── Circular / Puntos ───────────────────────────────────────────
-  static String _drawDots(QrImage qr, int m, double t, String fill) {
+    static String _drawDots(
+    QrImage qr,
+    int m,
+    double t,
+    String fill, {
+    double logoSizeFrac = 0.0,
+    double logoAuraModules = 0.0,
+  }) {
     final buf = StringBuffer();
     buf.writeln('<g fill="$fill">');
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
+        if (_isReservedCenterModule(
+          r,
+          c,
+          m,
+          logoSizeFrac: logoSizeFrac,
+          logoAuraModules: logoAuraModules,
+        )) {
+          continue;
+        }
         final double h = ((r * 13 + c * 29) % 100) / 100.0;
         final double cx = c * t + t / 2;
         final double cy = r * t + t / 2;
@@ -260,13 +375,29 @@ class QrSvgExporter {
   }
 
   // ── Diamantes / Rombos ──────────────────────────────────────────
-  static String _drawDiamonds(QrImage qr, int m, double t, String fill) {
+    static String _drawDiamonds(
+    QrImage qr,
+    int m,
+    double t,
+    String fill, {
+    double logoSizeFrac = 0.0,
+    double logoAuraModules = 0.0,
+  }) {
     final buf = StringBuffer();
     buf.writeln('<g fill="$fill">');
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
+        if (_isReservedCenterModule(
+          r,
+          c,
+          m,
+          logoSizeFrac: logoSizeFrac,
+          logoAuraModules: logoAuraModules,
+        )) {
+          continue;
+        }
         final double h = ((r * 17 + c * 31) % 100) / 100.0;
         final double sc = 0.65 + 0.22 * h;
         final double x = c * t, y = r * t;
@@ -350,6 +481,29 @@ class QrSvgExporter {
   // ═══════════════════════════════════════════════════════════════
 
   static bool _isEye(int r, int c, int m) =>
+      static bool _isReservedCenterModule(
+    int r,
+    int c,
+    int m, {
+    required double logoSizeFrac,
+    required double logoAuraModules,
+  }) {
+    if (logoSizeFrac <= 0) return false;
+
+    final double nx = (c + 0.5) / m;
+    final double ny = (r + 0.5) / m;
+
+    final double halfLogo = logoSizeFrac / 2.0;
+    final double auraFrac = logoAuraModules / m;
+    final double half = halfLogo + auraFrac;
+
+    final double minX = 0.5 - half;
+    final double maxX = 0.5 + half;
+    final double minY = 0.5 - half;
+    final double maxY = 0.5 + half;
+
+    return nx >= minX && nx <= maxX && ny >= minY && ny <= maxY;
+  }
       (r < 7 && c < 7) ||
       (r < 7 && c >= m - 7) ||
       (r >= m - 7 && c < 7);
