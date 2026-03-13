@@ -2307,60 +2307,60 @@ class QrAdvancedPainter extends CustomPainter {
       Rect? qrBox;
       double bestScore = -1e18;
 
-      final double maxCandidateSide = math.min(
-        shapeBounds.width,
-        shapeBounds.height,
-      ) * 0.94;
+final double maxCandidateSide = math.min(
+  shapeBounds.width,
+  shapeBounds.height,
+) * 0.78;
 
-      final double minCandidateSide = math.max(
-        72.0,
-        (m + 2) * 2.35,
-      );
+final double minCandidateSide = math.max(
+  64.0,
+  (m + 2) * 2.10,
+);
 
-      for (double side = maxCandidateSide; side >= minCandidateSide; side -= 6.0) {
-        final double step = math.max(4.0, side * 0.05);
-        final double safetyPad = side * 0.12;
+for (double side = maxCandidateSide; side >= minCandidateSide; side -= 5.0) {
+  final double step = math.max(3.0, side * 0.045);
+  final double safetyPad = side * (0.18 + (shapeGap.clamp(0.0, 3.0) * 0.04));
 
-        for (double top = shapeBounds.top; top <= shapeBounds.bottom - side; top += step) {
-          for (double left = shapeBounds.left; left <= shapeBounds.right - side; left += step) {
-            final Rect rect = Rect.fromLTWH(left, top, side, side);
+  for (double top = shapeBounds.top; top <= shapeBounds.bottom - side; top += step) {
+    for (double left = shapeBounds.left; left <= shapeBounds.right - side; left += step) {
+      final Rect rect = Rect.fromLTWH(left, top, side, side);
 
-            final double cov = rectCoverage(rect);
-            if (cov < 0.82) continue;
+      final double cov = rectCoverage(rect);
+      if (cov < 0.88) continue;
 
-            final double safeCov = expandedCoverage(rect, safetyPad);
-            if (safeCov < 0.58) continue;
+      final double safeCov = expandedCoverage(rect, safetyPad);
+      if (safeCov < 0.70) continue;
 
-            final double dx = rect.center.dx - shapeCenter.dx;
-            final double dy = rect.center.dy - shapeCenter.dy;
-            final double centerPenalty = (dx * dx + dy * dy) / (side * side);
+      final double dx = rect.center.dx - shapeCenter.dx;
+      final double dy = rect.center.dy - shapeCenter.dy;
+      final double centerPenalty = (dx * dx + dy * dy) / (side * side);
 
-            double edgePenalty = 0.0;
-            if (rect.left - shapeBounds.left < side * 0.07) edgePenalty += 0.18;
-            if (shapeBounds.right - rect.right < side * 0.07) edgePenalty += 0.18;
-            if (rect.top - shapeBounds.top < side * 0.10) edgePenalty += 0.28;
-            if (shapeBounds.bottom - rect.bottom < side * 0.05) edgePenalty += 0.10;
+      double edgePenalty = 0.0;
+      if (rect.left - shapeBounds.left < side * 0.10) edgePenalty += 0.22;
+      if (shapeBounds.right - rect.right < side * 0.10) edgePenalty += 0.22;
+      if (rect.top - shapeBounds.top < side * 0.14) edgePenalty += 0.34;
+      if (shapeBounds.bottom - rect.bottom < side * 0.10) edgePenalty += 0.20;
 
-            final double score =
-                (side * 0.055) +
-                (cov * 2.6) +
-                (safeCov * 3.4) -
-                (centerPenalty * 1.05) -
-                edgePenalty;
+      final double score =
+          (side * 0.045) +
+          (cov * 2.9) +
+          (safeCov * 4.2) -
+          (centerPenalty * 1.30) -
+          edgePenalty;
 
-            if (score > bestScore) {
-              bestScore = score;
-              qrBox = rect;
-            }
-          }
-        }
+      if (score > bestScore) {
+        bestScore = score;
+        qrBox = rect;
       }
+    }
+  }
+}
 
-      qrBox ??= Rect.fromCenter(
-        center: shapeCenter,
-        width: math.min(size.width, size.height) * 0.56,
-        height: math.min(size.width, size.height) * 0.56,
-      );
+qrBox ??= Rect.fromCenter(
+  center: shapeCenter,
+  width: math.min(size.width, size.height) * 0.48,
+  height: math.min(size.width, size.height) * 0.48,
+);
 
       final Rect qrBoxFinal = qrBox!;
 
