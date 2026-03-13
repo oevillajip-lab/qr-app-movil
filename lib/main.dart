@@ -1633,6 +1633,7 @@ String _buildSvg() {
     advSubStyle: _advSubStyle,
     logoBytes: isShape ? null : _logoBytes,
     logoSizeFrac: isShape ? 0.0 : (effLogo / 270.0),
+    logoAuraModules: isShape ? 0.0 : _auraSize,
     size: 1024,
   );
 }
