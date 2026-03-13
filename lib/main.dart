@@ -192,7 +192,6 @@ class _MainScreenState extends State<MainScreen>
   Uint8List? _shapeBytes;
   img_lib.Image? _shapeImage;
   List<List<bool>>? _shapeMask;
-  String? _predefinedShape;
 
   double _logoSize = 60.0;
   double _auraSize = 1.5;
@@ -351,71 +350,11 @@ class _MainScreenState extends State<MainScreen>
     final silhouette = _normalizeShapeSilhouette(decoded);
     final mask = _maskFromAlpha(silhouette);
     final png = Uint8List.fromList(img_lib.encodePng(silhouette));
-    setState(() { _predefinedShape = null; _shapeBytes = png; _shapeImage = silhouette; _shapeMask = mask; });
-  }
-
-  void _applyPredefinedShape(String shape) {
-    const int sz = 256;
-    final img = img_lib.Image(width: sz, height: sz, numChannels: 4);
-    final double cx = sz / 2.0, cy = sz / 2.0, r = sz / 2.0 - 2;
-
-    bool inside(int x, int y) {
-  final double px = x + 0.5, py = y + 0.5;
-  final double dx = px - cx, dy = py - cy;
-  final double dist = math.sqrt(dx * dx + dy * dy);
-  switch (shape) {
-    case "Círculo":
-      return dist <= r;
-    case "Triángulo":
-      final double h = r * math.sqrt(3) / 2;
-      final double topY = cy - h * 2 / 3;
-      final double botY = cy + h / 3;
-      if (py < topY || py > botY) return false;
-      final double progress = (py - topY) / (botY - topY);
-      final double halfW = progress * r;
-      return (px - cx).abs() <= halfW;
-    case "Rombo":
-      return dx.abs() / r + dy.abs() / r <= 1.0;
-    case "Estrella":
-      final double angle = math.atan2(dx, -dy);
-      final double sector = math.pi * 2 / 5;
-      final double normAngle = ((angle % sector) + sector) % sector;
-      final double t = normAngle <= sector / 2
-          ? normAngle / (sector / 2)
-          : (sector - normAngle) / (sector / 2);
-      final double limitR = r * 0.42 + (r * 0.97 - r * 0.42) * t;
-      return dist <= limitR;
-    case "Corazón":
-      final double nx = dx / (r * 0.78);
-      final double ny = -(dy - r * 0.15) / (r * 0.78);
-      final double val = nx * nx + ny * ny - 1;
-      return val * val * val <= nx * nx * ny * ny * ny;
-    case "Flecha":
-      final double nx2 = dx / r;
-      final double ny2 = dy / r;
-      if (nx2 >= -0.1) {
-        return ny2.abs() <= (1.0 - nx2) * 0.85;
-      } else {
-        return ny2.abs() <= 0.30;
-      }
-    case "Pentágono":
-      final double a0 = math.atan2(dx, -dy);
-      final double sec = (2 * math.pi / 5);
-      final double rel = ((a0 % sec) + sec) % sec - sec / 2;
-      final double lim = r * math.cos(math.pi / 5) / math.cos(rel.clamp(-math.pi/5, math.pi/5));
-      return dist <= lim;
-    default:
-      return false;
-  }
-}
-
-    for (int y = 0; y < sz; y++) for (int x = 0; x < sz; x++) {
-      if (inside(x, y)) img.setPixelRgba(x, y, 255, 255, 255, 255);
-      else img.setPixelRgba(x, y, 0, 0, 0, 0);
-    }
-    final mask = _maskFromAlpha(img);
-    final png = Uint8List.fromList(img_lib.encodePng(img));
-    setState(() { _predefinedShape = shape; _shapeBytes = png; _shapeImage = img; _shapeMask = mask; });
+    setState(() {
+  _shapeBytes = png;
+  _shapeImage = silhouette;
+  _shapeMask = mask;
+});
   }
 
   img_lib.Image _removeWhiteBg(img_lib.Image src) {
@@ -864,55 +803,79 @@ class _MainScreenState extends State<MainScreen>
   ));
 
   // ── Shape card ───────────────────────────────────────────────────
-  Widget _shapeCard() => _card(Column(
+  Widget _shapeCard() => _card(
+  Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text("Formas predefinidas",
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black45)),
-      const SizedBox(height: 10),
-      SizedBox(
-        height: 40,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: ["Círculo","Triángulo","Estrella","Flecha","Corazón","Rombo","Pentágono"]
-              .map((shape) {
-            final sel = _predefinedShape == shape;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: GestureDetector(
-                onTap: () { HapticFeedback.selectionClick(); _applyPredefinedShape(shape); },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: sel ? Colors.black : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: sel ? Colors.black : Colors.black12, width: 1.5),
-                  ),
-                  child: Text(shape,
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w700,
-                          color: sel ? Colors.white : Colors.black54)),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-      const SizedBox(height: 12),
       _actionTile(
         icon: Icons.format_shapes,
-        label: _shapeBytes == null || _predefinedShape != null
-            ? "Cargar imagen personalizada"
-            : "✅ Imagen cargada — Cambiar",
+        label: _shapeBytes == null
+            ? "Cargar imagen de forma (PNG/JPG)"
+            : "✅ Forma cargada — Cambiar",
         onTap: () async {
           final img = await ImagePicker().pickImage(source: ImageSource.gallery);
           if (img != null) await _processShape(File(img.path));
         },
       ),
+      const SizedBox(height: 12),
+      if (_shapeBytes != null)
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F7F7),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  "La silueta cargada se usará como base del QR con forma.",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () => setState(() {
+                _shapeBytes = null;
+                _shapeImage = null;
+                _shapeMask = null;
+              }),
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.delete_outline,
+                  color: Colors.red.shade400,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        )
+      else
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Text(
+            "Usa una imagen con una silueta clara. PNG transparente ideal; JPG también sirve.",
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.black38,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
     ],
-  ));
+  ),
+);
 
   // ── Color card Avanzado ──────────────────────────────────────────
   Widget _colorCardAdv() => _card(Column(children: [
@@ -2019,13 +1982,17 @@ class QrAdvancedPainter extends CustomPainter {
       final int maskH = math.max(size.height.round(), 1);
       final canvasMask = _buildCanvasShapeMask(maskW, maskH);
 
-      int qrDataCells = 0, qrDarkCells = 0;
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        if (_isEye(r, c, m)) continue;
-        qrDataCells++;
-        if (qr.isDark(r, c)) qrDarkCells++;
+      int qrDataCells = 0;
+      int qrDarkCells = 0;
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (_isEye(r, c, m)) continue;
+          qrDataCells++;
+          if (qr.isDark(r, c)) qrDarkCells++;
+        }
       }
-      final double qrDarkRatio = qrDataCells == 0 ? 0.55 : (qrDarkCells / qrDataCells).clamp(0.35, 0.75);
+      final double qrDarkRatio =
+          qrDataCells == 0 ? 0.50 : (qrDarkCells / qrDataCells);
 
       bool insideShapePoint(double px, double py) {
         final int x = px.floor().clamp(0, maskW - 1).toInt();
@@ -2033,188 +2000,371 @@ class QrAdvancedPainter extends CustomPainter {
         return canvasMask[y][x];
       }
 
-      bool rectWellInsideShape(Rect rect) {
-        const probes = [0.18, 0.50, 0.82];
-        for (final py in probes) for (final px in probes) {
-          if (!insideShapePoint(rect.left + rect.width * px, rect.top + rect.height * py)) return false;
+      double rectCoverage(Rect rect) {
+        const probes = [0.12, 0.30, 0.50, 0.70, 0.88];
+        int ok = 0;
+        int total = 0;
+        for (final py in probes) {
+          for (final px in probes) {
+            total++;
+            if (insideShapePoint(
+              rect.left + rect.width * px,
+              rect.top + rect.height * py,
+            )) {
+              ok++;
+            }
+          }
         }
+        return total == 0 ? 0.0 : ok / total;
+      }
+
+      bool rectMostlyInsideShape(Rect rect, {double minCoverage = 0.68}) {
+        return rectCoverage(rect) >= minCoverage;
+      }
+
+      final int preferredSide = math.min(
+        math.min(maskW, maskH),
+        math.max(((m + 4) * 3.0).round(), 96),
+      ).toInt();
+
+      final int relaxedSide = math.min(
+        math.min(maskW, maskH),
+        math.max(((m + 4) * 2.5).round(), 78),
+      ).toInt();
+
+      Rect? qrBox = _findBestQrSquare(
+        canvasMask,
+        minSide: preferredSide,
+        step: 2,
+      );
+
+      qrBox ??= _findBestQrSquare(
+        canvasMask,
+        minSide: relaxedSide,
+        step: 2,
+      );
+
+      qrBox ??= Rect.fromLTWH(
+        size.width * 0.20,
+        size.height * 0.20,
+        size.width * 0.60,
+        size.width * 0.60,
+      );
+
+      final Rect qrBoxFinal = qrBox;
+
+      const double quietModules = 1.25;
+      final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
+
+      final Rect qrDataRect = Rect.fromLTWH(
+        qrBoxFinal.left + qt * quietModules,
+        qrBoxFinal.top + qt * quietModules,
+        qt * m,
+        qt * m,
+      );
+
+      final Rect quietRect = qrDataRect.inflate(qt * 1.9);
+
+      final bool isLiquid =
+          mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+      final bool isBars = mapSubStyle.contains("Barras");
+      final bool isDots = mapSubStyle.contains("Puntos");
+      final bool isDiamonds = mapSubStyle.contains("Diamantes");
+
+      double targetDensity = qrDarkRatio;
+      if (isBars) targetDensity += 0.02;
+      if (isDots || isDiamonds) targetDensity -= 0.01;
+      targetDensity = targetDensity.clamp(0.22, 0.80);
+
+      int hashCell(int rr, int cc) {
+        int v = ((rr + 101) * 73856093) ^
+            ((cc + 211) * 19349663) ^
+            ((m + 307) * 83492791);
+        v ^= (v >> 13);
+        v ^= (v << 7);
+        return v & 0x7fffffff;
+      }
+
+      final double decoStep = qt;
+      final double originX = qrDataRect.left;
+      final double originY = qrDataRect.top;
+
+      final int minCol = (((0.0 - originX) / decoStep).floor()) - 2;
+      final int maxCol = (((size.width - originX) / decoStep).ceil()) + 2;
+      final int minRow = (((0.0 - originY) / decoStep).floor()) - 2;
+      final int maxRow = (((size.height - originY) / decoStep).ceil()) + 2;
+
+      final Map<String, bool> active = <String, bool>{};
+
+      String key(int rr, int cc) => '$rr:$cc';
+
+      bool cellAllowed(int rr, int cc) {
+        final Rect cellRect = Rect.fromLTWH(
+          originX + cc * decoStep,
+          originY + rr * decoStep,
+          decoStep,
+          decoStep,
+        );
+
+        if (cellRect.right <= 0 ||
+            cellRect.bottom <= 0 ||
+            cellRect.left >= size.width ||
+            cellRect.top >= size.height) {
+          return false;
+        }
+
+        if (cellRect.overlaps(quietRect)) return false;
+
+        if (!rectMostlyInsideShape(cellRect, minCoverage: 0.60)) {
+          return false;
+        }
+
         return true;
       }
 
-      void drawDecorSilhouette({Rect? reservedRect, required double moduleStep}) {
-        final double decoT = moduleStep.clamp(1.6, 14.0).toDouble();
-        final int cols = (size.width / decoT).ceil();
-        final int rows = (size.height / decoT).ceil();
-
-        bool cellAllowed(int rr, int cc) {
-          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
-          final Rect cellRect = Rect.fromLTWH(cc * decoT, rr * decoT, decoT, decoT);
-          if (cellRect.right > size.width || cellRect.bottom > size.height) return false;
-          if (reservedRect != null && reservedRect.overlaps(cellRect)) return false;
-          if (!rectWellInsideShape(cellRect)) return false;
-          return true;
-        }
-
-        int hashCell(int rr, int cc) {
-          int v = ((rr + 11) * 73856093) ^ ((cc + 17) * 19349663) ^ ((m + 23) * 83492791);
-          v ^= (v >> 13); v ^= (v << 7);
-          return v & 0x7fffffff;
-        }
-
-        final bool isLiquidStyle = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-        final bool isBarsStyle = mapSubStyle.contains("Barras");
-        final bool isDotsStyle = mapSubStyle.contains("Puntos");
-        final bool isDiamondStyle = mapSubStyle.contains("Diamantes");
-        final bool isNormalStyle = mapSubStyle.contains("Cuadrado") || mapSubStyle.contains("Normal");
-
-        int density = (qrDarkRatio * 100).round();
-        if (isBarsStyle) density += 2;
-        if (isLiquidStyle) density += 1;
-        if (isNormalStyle) density += 2;
-        if (isDotsStyle) density -= 1;
-        if (isDiamondStyle) density -= 1;
-        density = density.clamp(42, 68);
-
-        final active = List.generate(rows, (rr) => List.generate(cols, (cc) {
-          if (!cellAllowed(rr, cc)) return false;
-          return (hashCell(rr, cc) % 100) < density;
-        }));
-
-        bool on(int rr, int cc) {
-          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
-          return active[rr][cc];
-        }
-
-        if (isBarsStyle) {
-          for (int cc = 0; cc < cols; cc++) for (int rr = 0; rr < rows; rr++) {
-            if (!on(rr, cc)) continue;
-            if (rr > 0 && on(rr - 1, cc)) continue;
-            int endR = rr; while (endR + 1 < rows && on(endR + 1, cc)) endR++;
-            canvas.drawRRect(RRect.fromRectAndRadius(
-                Rect.fromLTWH(cc * decoT + decoT * 0.10, rr * decoT, decoT * 0.80, (endR - rr + 1) * decoT),
-                Radius.circular(decoT * 0.38)), solidPaint);
+      for (int rr = minRow; rr <= maxRow; rr++) {
+        for (int cc = minCol; cc <= maxCol; cc++) {
+          if (!cellAllowed(rr, cc)) {
+            active[key(rr, cc)] = false;
+            continue;
           }
-          return;
+          final double v = (hashCell(rr, cc) % 1000) / 1000.0;
+          active[key(rr, cc)] = v < targetDensity;
         }
+      }
 
-        if (isLiquidStyle) {
-          final decoLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
-              ..strokeWidth = decoT..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-          if (grad != null) decoLiquidPen.shader = grad; else decoLiquidPen.color = qrC1;
-          final Path decoPath = Path();
-          for (int rr = 0; rr < rows; rr++) for (int cc = 0; cc < cols; cc++) {
+      bool on(int rr, int cc) => active[key(rr, cc)] ?? false;
+
+      if (isBars) {
+        for (int cc = minCol; cc <= maxCol; cc++) {
+          for (int rr = minRow; rr <= maxRow; rr++) {
             if (!on(rr, cc)) continue;
-            final double x = cc * decoT, y = rr * decoT;
-            final double cx = x + decoT / 2, cy = y + decoT / 2;
-            decoPath.moveTo(cx, cy); decoPath.lineTo(cx, cy);
-            if (on(rr, cc + 1)) { decoPath.moveTo(cx, cy); decoPath.lineTo(cx + decoT, cy); }
-            if (on(rr + 1, cc)) { decoPath.moveTo(cx, cy); decoPath.lineTo(cx, cy + decoT); }
+            if (on(rr - 1, cc)) continue;
+
+            int endR = rr;
+            while (on(endR + 1, cc)) {
+              endR++;
+            }
+
+            final Rect barRect = Rect.fromLTWH(
+              originX + cc * decoStep + decoStep * 0.10,
+              originY + rr * decoStep,
+              decoStep * 0.80,
+              (endR - rr + 1) * decoStep,
+            );
+
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(
+                barRect,
+                Radius.circular(decoStep * 0.38),
+              ),
+              solidPaint,
+            );
           }
-          canvas.drawPath(decoPath, decoLiquidPen);
-          return;
+        }
+      } else if (isLiquid) {
+        final decoLiquidPen = Paint()
+          ..isAntiAlias = true
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = decoStep
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round;
+
+        if (grad != null) {
+          decoLiquidPen.shader = grad;
+        } else {
+          decoLiquidPen.color = qrC1;
         }
 
-        for (int rr = 0; rr < rows; rr++) for (int cc = 0; cc < cols; cc++) {
-          if (!on(rr, cc)) continue;
-          final double x = cc * decoT, y = rr * decoT;
-          final double cx = x + decoT / 2, cy = y + decoT / 2;
-          if (isDotsStyle) {
-            final double h = (hashCell(rr, cc) % 100) / 100.0;
-            canvas.drawCircle(Offset(cx, cy), decoT * (0.35 + 0.15 * h), solidPaint);
-          } else if (isDiamondStyle) {
-            final double h = (hashCell(rr, cc) % 100) / 100.0;
-            final double sc = 0.65 + 0.22 * h; final double off = decoT * (1 - sc) / 2;
-            canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + decoT - off, cy)
-                ..lineTo(cx, y + decoT - off)..lineTo(x + off, cy)..close(), solidPaint);
-          } else {
-            canvas.drawRect(Rect.fromLTWH(x, y, decoT + 0.2, decoT + 0.2), solidPaint);
+        final Path decoPath = Path();
+
+        for (int rr = minRow; rr <= maxRow; rr++) {
+          for (int cc = minCol; cc <= maxCol; cc++) {
+            if (!on(rr, cc)) continue;
+
+            final double x = originX + cc * decoStep;
+            final double y = originY + rr * decoStep;
+            final double cx = x + decoStep / 2;
+            final double cy = y + decoStep / 2;
+
+            decoPath.moveTo(cx, cy);
+            decoPath.lineTo(cx, cy);
+
+            if (on(rr, cc + 1)) {
+              decoPath.moveTo(cx, cy);
+              decoPath.lineTo(cx + decoStep, cy);
+            }
+
+            if (on(rr + 1, cc)) {
+              decoPath.moveTo(cx, cy);
+              decoPath.lineTo(cx, cy + decoStep);
+            }
+          }
+        }
+
+        canvas.drawPath(decoPath, decoLiquidPen);
+      } else {
+        for (int rr = minRow; rr <= maxRow; rr++) {
+          for (int cc = minCol; cc <= maxCol; cc++) {
+            if (!on(rr, cc)) continue;
+
+            final double x = originX + cc * decoStep;
+            final double y = originY + rr * decoStep;
+            final double cx = x + decoStep / 2;
+            final double cy = y + decoStep / 2;
+
+            if (isDots) {
+              final double h = (hashCell(rr, cc) % 100) / 100.0;
+              canvas.drawCircle(
+                Offset(cx, cy),
+                decoStep * (0.35 + 0.15 * h),
+                solidPaint,
+              );
+            } else if (isDiamonds) {
+              final double h = (hashCell(rr, cc) % 100) / 100.0;
+              final double sc = 0.65 + 0.22 * h;
+              final double off = decoStep * (1 - sc) / 2;
+              canvas.drawPath(
+                Path()
+                  ..moveTo(cx, y + off)
+                  ..lineTo(x + decoStep - off, cy)
+                  ..lineTo(cx, y + decoStep - off)
+                  ..lineTo(x + off, cy)
+                  ..close(),
+                solidPaint,
+              );
+            } else {
+              canvas.drawRect(
+                Rect.fromLTWH(x, y, decoStep + 0.2, decoStep + 0.2),
+                solidPaint,
+              );
+            }
           }
         }
       }
 
-      final int preferredSide = math.min(math.min(maskW, maskH),
-          math.max(((m + 4) * 2.8).round(), 80)).toInt();
-      final int relaxedSide = math.min(math.min(maskW, maskH),
-          math.max(((m + 4) * 2.2).round(), 60)).toInt();
+      final qrLiquidPen = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = qt
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
 
-      Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
-      qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
-      qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
-
-      if (qrBox == null) {
-        final double side = size.width * 0.65;
-        final double left = (size.width - side) / 2;
-        final double top = (size.height - side) / 2;
-        qrBox = Rect.fromLTWH(left, top, side, side);
+      if (grad != null) {
+        qrLiquidPen.shader = grad;
+      } else {
+        qrLiquidPen.color = qrC1;
       }
-      final Rect qrBoxFinal = qrBox!;
-
-      const double quietModules = 1.5;
-      final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
-      final Rect qrDataRect = Rect.fromLTWH(
-          qrBoxFinal.left + qt * quietModules, qrBoxFinal.top + qt * quietModules, qt * m, qt * m);
-
-      drawDecorSilhouette(reservedRect: qrDataRect.inflate(qt * 2.0), moduleStep: qt);
-
-      final qrLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
-          ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-      if (grad != null) qrLiquidPen.shader = grad; else qrLiquidPen.color = qrC1;
 
       bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
-        final double mx = qrDataRect.left + c * qt + qt * 0.5;
-        final double my = qrDataRect.top + r * qt + qt * 0.5;
-        if (!insideShapePoint(mx, my)) return false;
         return true;
       }
-
-      final bool isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-      final bool isBars = mapSubStyle.contains("Barras");
-      final bool isDots = mapSubStyle.contains("Puntos");
-      final bool isDiamonds = mapSubStyle.contains("Diamantes");
-      final qrPath = Path();
 
       EyeStyle eyeStyle = EyeStyle.rect;
       if (mapSubStyle.contains("Puntos")) eyeStyle = EyeStyle.circ;
       if (mapSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
 
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        if (!darkOk(r, c)) continue;
-        final double x = qrDataRect.left + c * qt;
-        final double y = qrDataRect.top + r * qt;
-        final double cx = x + qt / 2, cy = y + qt / 2;
-        if (isLiquid) {
-          qrPath.moveTo(cx, cy); qrPath.lineTo(cx, cy);
-          if (darkOk(r, c + 1)) { qrPath.moveTo(cx, cy); qrPath.lineTo(cx + qt, cy); }
-          if (darkOk(r + 1, c)) { qrPath.moveTo(cx, cy); qrPath.lineTo(cx, cy + qt); }
-        } else if (isBars) {
-          if (r == 0 || !darkOk(r - 1, c)) {
-            int er = r; while (er + 1 < m && darkOk(er + 1, c)) er++;
-            canvas.drawRRect(RRect.fromRectAndRadius(
-                Rect.fromLTWH(x + qt * 0.10, y, qt * 0.80, (er - r + 1) * qt),
-                Radius.circular(qt * 0.38)), solidPaint);
+      final Path qrPath = Path();
+
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!darkOk(r, c)) continue;
+
+          final double x = qrDataRect.left + c * qt;
+          final double y = qrDataRect.top + r * qt;
+          final double cx = x + qt / 2;
+          final double cy = y + qt / 2;
+
+          if (isLiquid) {
+            qrPath.moveTo(cx, cy);
+            qrPath.lineTo(cx, cy);
+
+            if (darkOk(r, c + 1)) {
+              qrPath.moveTo(cx, cy);
+              qrPath.lineTo(cx + qt, cy);
+            }
+
+            if (darkOk(r + 1, c)) {
+              qrPath.moveTo(cx, cy);
+              qrPath.lineTo(cx, cy + qt);
+            }
+          } else if (isBars) {
+            if (r == 0 || !darkOk(r - 1, c)) {
+              int er = r;
+              while (er + 1 < m && darkOk(er + 1, c)) {
+                er++;
+              }
+
+              canvas.drawRRect(
+                RRect.fromRectAndRadius(
+                  Rect.fromLTWH(
+                    x + qt * 0.10,
+                    y,
+                    qt * 0.80,
+                    (er - r + 1) * qt,
+                  ),
+                  Radius.circular(qt * 0.38),
+                ),
+                solidPaint,
+              );
+            }
+          } else if (isDots) {
+            final double h = ((r * 13 + c * 29) % 100) / 100.0;
+            canvas.drawCircle(
+              Offset(cx, cy),
+              qt * (0.35 + 0.15 * h),
+              solidPaint,
+            );
+          } else if (isDiamonds) {
+            final double h = ((r * 17 + c * 31) % 100) / 100.0;
+            final double sc = 0.65 + 0.22 * h;
+            final double off = qt * (1 - sc) / 2;
+            canvas.drawPath(
+              Path()
+                ..moveTo(cx, y + off)
+                ..lineTo(x + qt - off, cy)
+                ..lineTo(cx, y + qt - off)
+                ..lineTo(x + off, cy)
+                ..close(),
+              solidPaint,
+            );
+          } else {
+            canvas.drawRect(
+              Rect.fromLTWH(x, y, qt + 0.2, qt + 0.2),
+              solidPaint,
+            );
           }
-        } else if (isDots) {
-          final double h = ((r * 13 + c * 29) % 100) / 100.0;
-          canvas.drawCircle(Offset(cx, cy), qt * (0.35 + 0.15 * h), solidPaint);
-        } else if (isDiamonds) {
-          final double h = ((r * 17 + c * 31) % 100) / 100.0;
-          final double sc = 0.65 + 0.22 * h; final double off = qt * (1 - sc) / 2;
-          canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + qt - off, cy)
-              ..lineTo(cx, y + qt - off)..lineTo(x + off, cy)..close(), solidPaint);
-        } else {
-          canvas.drawRect(Rect.fromLTWH(x, y, qt + 0.2, qt + 0.2), solidPaint);
         }
       }
-      if (isLiquid) canvas.drawPath(qrPath, qrLiquidPen);
+
+      if (isLiquid) {
+        canvas.drawPath(qrPath, qrLiquidPen);
+      }
 
       _drawEye(canvas, qrDataRect.left, qrDataRect.top, qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.right - 7 * qt, qrDataRect.top, qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
-
+      _drawEye(
+        canvas,
+        qrDataRect.right - 7 * qt,
+        qrDataRect.top,
+        qt,
+        pE,
+        pI,
+        eyeStyle,
+      );
+      _drawEye(
+        canvas,
+        qrDataRect.left,
+        qrDataRect.bottom - 7 * qt,
+        qt,
+        pE,
+        pI,
+        eyeStyle,
+      );
     } else if (isSplit) {
+          
       final excl = _buildLogoExcl(m, t);
 
       EyeStyle eyeStyle = EyeStyle.rect;
