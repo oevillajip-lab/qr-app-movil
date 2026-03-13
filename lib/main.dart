@@ -194,10 +194,11 @@ class _MainScreenState extends State<MainScreen>
   List<List<bool>>? _shapeMask;
 
   double _logoSize = 60.0;
-  double _auraSize = 1.5;
-  String _mapSubStyle = "Liquid Pro (Gusano)";
-  String _advSubStyle = "Liquid Pro (Gusano)";
-  String _splitDir = "Vertical";
+double _auraSize = 1.5;
+double _shapeGap = 0.8;
+String _mapSubStyle = "Liquid Pro (Gusano)";
+String _advSubStyle = "Liquid Pro (Gusano)";
+String _splitDir = "Vertical";
 
   final GlobalKey _qrKey = GlobalKey();
 
@@ -803,7 +804,7 @@ class _MainScreenState extends State<MainScreen>
   ));
 
   // ── Shape card ───────────────────────────────────────────────────
-  Widget _shapeCard() => _card(
+Widget _shapeCard() => _card(
   Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -818,7 +819,7 @@ class _MainScreenState extends State<MainScreen>
         },
       ),
       const SizedBox(height: 12),
-      if (_shapeBytes != null)
+      if (_shapeBytes != null) ...[
         Row(
           children: [
             Expanded(
@@ -860,8 +861,48 @@ class _MainScreenState extends State<MainScreen>
               ),
             ),
           ],
-        )
-      else
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            const Text(
+              "Espacio QR / forma",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            Text(
+              "${_shapeGap.toStringAsFixed(1)} mód.",
+              style: const TextStyle(fontSize: 12, color: Colors.black45),
+            ),
+          ],
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 3,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+          ),
+          child: Slider(
+            value: _shapeGap,
+            min: 0.0,
+            max: 3.0,
+            divisions: 12,
+            activeColor: Colors.black,
+            inactiveColor: Colors.black12,
+            onChanged: (v) => setState(() => _shapeGap = v),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Text(
+            "0.0 = casi pegado · más alto = más encapsulado dentro de la forma",
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.black38,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      ] else
         const Padding(
           padding: EdgeInsets.only(top: 2),
           child: Text(
@@ -1068,6 +1109,7 @@ class _MainScreenState extends State<MainScreen>
                                         shapeImage: _shapeImage, shapeMask: _shapeMask,
                                         logoSize: isShape ? 0.0 : effLogo,
                                         auraSize: isShape ? 0.0 : _auraSize,
+                                        shapeGap: _shapeGap,
                                         qrC1: _qrC1, qrC2: _qrC2,
                                         qrMode: _qrColorMode, qrDir: _qrGradDir,
                                         customEyes: _customEyes,
@@ -1126,25 +1168,54 @@ class _MainScreenState extends State<MainScreen>
   }
 
   // ── Bottom bar ───────────────────────────────────────────────────
-  Widget _buildBottomBar(bool isEmpty) => Container(
-    color: Colors.white,
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-    child: Row(children: [
+Widget _buildBottomBar(bool isEmpty) => Container(
+  color: Colors.white,
+  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+  child: Row(
+    children: [
       Expanded(
-        child: _bigBtn("GUARDAR", Icons.save_alt, isEmpty ? null : () async {
-          HapticFeedback.heavyImpact();
-          await _exportar();
-        }),
+        child: _bigBtn(
+          "IMAGEN",
+          Icons.image_outlined,
+          isEmpty
+              ? null
+              : () async {
+                  HapticFeedback.heavyImpact();
+                  await _guardarImagen();
+                },
+        ),
       ),
-      const SizedBox(width: 10),
+      const SizedBox(width: 8),
       Expanded(
-        child: _bigBtn("COMPARTIR", Icons.share_outlined, isEmpty ? null : () async {
-          HapticFeedback.heavyImpact();
-          await _compartir();
-        }, outlined: true),
+        child: _bigBtn(
+          "VECTOR",
+          Icons.hexagon_outlined,
+          isEmpty
+              ? null
+              : () async {
+                  HapticFeedback.heavyImpact();
+                  await _guardarSvg();
+                },
+          outlined: true,
+        ),
       ),
-    ]),
-  );
+      const SizedBox(width: 8),
+      Expanded(
+        child: _bigBtn(
+          "COMPARTIR",
+          Icons.share_outlined,
+          isEmpty
+              ? null
+              : () async {
+                  HapticFeedback.heavyImpact();
+                  await _mostrarSelectorCompartir();
+                },
+          outlined: true,
+        ),
+      ),
+    ],
+  ),
+);
 
   Widget _bigBtn(String label, IconData icon, VoidCallback? onTap, {bool outlined = false}) {
     final enabled = onTap != null;
@@ -1363,6 +1434,177 @@ class _MainScreenState extends State<MainScreen>
     return LinearGradient(colors: [c1, c2], begin: b, end: e);
   }
 
+ Future<Directory> _getExportDir() async {
+  if (Platform.isAndroid) {
+    final dirs = await getExternalStorageDirectories(
+      type: StorageDirectory.downloads,
+    );
+    if (dirs != null && dirs.isNotEmpty) {
+      return dirs.first;
+    }
+  }
+  return await getApplicationDocumentsDirectory();
+}
+
+Future<void> _guardarImagen() async {
+  try {
+    final pngBytes = await _renderPng();
+    await ImageGallerySaver.saveImage(
+      pngBytes,
+      name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("✅ Imagen PNG guardada en galería"),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.black,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error al guardar imagen: $e"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _guardarSvg() async {
+  try {
+    final svg = _buildSvg();
+    final svgBytes = Uint8List.fromList(utf8.encode(svg));
+    final dir = await _getExportDir();
+    final fileName = "QR_Logo_${DateTime.now().millisecondsSinceEpoch}.svg";
+    final file = File('${dir.path}/$fileName');
+
+    await file.writeAsBytes(svgBytes);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ SVG guardado en: ${file.path}"),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.black,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error al guardar SVG: $e"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _compartirImagen() async {
+  try {
+    final tmpDir = await getTemporaryDirectory();
+    final pngBytes = await _renderPng();
+    final pngFile = File(
+      '${tmpDir.path}/QR_Logo_${DateTime.now().millisecondsSinceEpoch}.png',
+    );
+    await pngFile.writeAsBytes(pngBytes);
+
+    await Share.shareXFiles(
+      [XFile(pngFile.path, mimeType: 'image/png')],
+      text: 'Generado con QR+Logo',
+    );
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error al compartir imagen: $e"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _compartirSvg() async {
+  try {
+    final tmpDir = await getTemporaryDirectory();
+    final svg = _buildSvg();
+    final svgBytes = Uint8List.fromList(utf8.encode(svg));
+    final svgFile = File(
+      '${tmpDir.path}/QR_Logo_${DateTime.now().millisecondsSinceEpoch}.svg',
+    );
+    await svgFile.writeAsBytes(svgBytes);
+
+    await Share.shareXFiles(
+      [XFile(svgFile.path, mimeType: 'image/svg+xml')],
+      text: 'Generado con QR+Logo',
+    );
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error al compartir SVG: $e"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _mostrarSelectorCompartir() async {
+  if (!mounted) return;
+
+  await showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Container(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "¿Qué quieres compartir?",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 16),
+          _actionTile(
+            icon: Icons.image_outlined,
+            label: "Compartir imagen PNG",
+            onTap: () async {
+              Navigator.pop(context);
+              await _compartirImagen();
+            },
+          ),
+          const SizedBox(height: 10),
+          _actionTile(
+            icon: Icons.hexagon_outlined,
+            label: "Compartir vector SVG",
+            onTap: () async {
+              Navigator.pop(context);
+              await _compartirSvg();
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}     
+
   // ═══════════════════════════════════════════════════════════════════
   // EXPORT — SVG vectorial + PNG 1024×1024 sin capturar widget
   // ═══════════════════════════════════════════════════════════════════
@@ -1418,6 +1660,7 @@ class _MainScreenState extends State<MainScreen>
         shapeImage: _shapeImage, shapeMask: _shapeMask,
         logoSize: isShape ? 0.0 : effLogo,
         auraSize: isShape ? 0.0 : _auraSize,
+        shapeGap: _shapeGap,
         qrC1: _qrC1, qrC2: _qrC2,
         qrMode: _qrColorMode, qrDir: _qrGradDir,
         customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
@@ -1821,7 +2064,7 @@ class QrAdvancedPainter extends CustomPainter {
   final String data, estiloAvanzado, mapSubStyle, advSubStyle, splitDir, qrMode, qrDir;
   final img_lib.Image? logoImage, shapeImage;
   final List<List<bool>>? outerMask, shapeMask;
-  final double logoSize, auraSize;
+  final double logoSize, auraSize, shapeGap;
   final bool customEyes;
   final Color qrC1, qrC2, eyeExt, eyeInt;
 
@@ -1837,6 +2080,7 @@ class QrAdvancedPainter extends CustomPainter {
     required this.shapeMask,
     required this.logoSize,
     required this.auraSize,
+    required this.shapeGap,
     required this.qrC1,
     required this.qrC2,
     required this.qrMode,
@@ -2022,48 +2266,126 @@ class QrAdvancedPainter extends CustomPainter {
         return rectCoverage(rect) >= minCoverage;
       }
 
-      final int preferredSide = math.min(
-        math.min(maskW, maskH),
-        math.max(((m + 4) * 3.0).round(), 96),
-      ).toInt();
+      int minSX = maskW;
+      int minSY = maskH;
+      int maxSX = 0;
+      int maxSY = 0;
+      int shapeCount = 0;
+      double sumSX = 0;
+      double sumSY = 0;
 
-      final int relaxedSide = math.min(
-        math.min(maskW, maskH),
-        math.max(((m + 4) * 2.5).round(), 78),
-      ).toInt();
+      for (int y = 0; y < maskH; y++) {
+        for (int x = 0; x < maskW; x++) {
+          if (!canvasMask[y][x]) continue;
+          shapeCount++;
+          sumSX += x + 0.5;
+          sumSY += y + 0.5;
+          if (x < minSX) minSX = x;
+          if (x > maxSX) maxSX = x;
+          if (y < minSY) minSY = y;
+          if (y > maxSY) maxSY = y;
+        }
+      }
 
-      Rect? qrBox = _findBestQrSquare(
-        canvasMask,
-        minSide: preferredSide,
-        step: 2,
+      final Rect shapeBounds = shapeCount == 0
+          ? Rect.fromLTWH(0, 0, size.width, size.height)
+          : Rect.fromLTRB(
+              minSX.toDouble(),
+              minSY.toDouble(),
+              (maxSX + 1).toDouble(),
+              (maxSY + 1).toDouble(),
+            );
+
+      final Offset shapeCenter = shapeCount == 0
+          ? Offset(size.width / 2, size.height / 2)
+          : Offset(sumSX / shapeCount, sumSY / shapeCount);
+
+      double expandedCoverage(Rect rect, double extraPx) {
+        return rectCoverage(rect.inflate(extraPx));
+      }
+
+      Rect? qrBox;
+      double bestScore = -1e18;
+
+      final double maxCandidateSide = math.min(
+        shapeBounds.width,
+        shapeBounds.height,
+      ) * 0.94;
+
+      final double minCandidateSide = math.max(
+        72.0,
+        (m + 2) * 2.35,
       );
 
-      qrBox ??= _findBestQrSquare(
-        canvasMask,
-        minSide: relaxedSide,
-        step: 2,
+      for (double side = maxCandidateSide; side >= minCandidateSide; side -= 6.0) {
+        final double step = math.max(4.0, side * 0.05);
+        final double safetyPad = side * 0.12;
+
+        for (double top = shapeBounds.top; top <= shapeBounds.bottom - side; top += step) {
+          for (double left = shapeBounds.left; left <= shapeBounds.right - side; left += step) {
+            final Rect rect = Rect.fromLTWH(left, top, side, side);
+
+            final double cov = rectCoverage(rect);
+            if (cov < 0.82) continue;
+
+            final double safeCov = expandedCoverage(rect, safetyPad);
+            if (safeCov < 0.58) continue;
+
+            final double dx = rect.center.dx - shapeCenter.dx;
+            final double dy = rect.center.dy - shapeCenter.dy;
+            final double centerPenalty = (dx * dx + dy * dy) / (side * side);
+
+            double edgePenalty = 0.0;
+            if (rect.left - shapeBounds.left < side * 0.07) edgePenalty += 0.18;
+            if (shapeBounds.right - rect.right < side * 0.07) edgePenalty += 0.18;
+            if (rect.top - shapeBounds.top < side * 0.10) edgePenalty += 0.28;
+            if (shapeBounds.bottom - rect.bottom < side * 0.05) edgePenalty += 0.10;
+
+            final double score =
+                (side * 0.055) +
+                (cov * 2.6) +
+                (safeCov * 3.4) -
+                (centerPenalty * 1.05) -
+                edgePenalty;
+
+            if (score > bestScore) {
+              bestScore = score;
+              qrBox = rect;
+            }
+          }
+        }
+      }
+
+      qrBox ??= Rect.fromCenter(
+        center: shapeCenter,
+        width: math.min(size.width, size.height) * 0.56,
+        height: math.min(size.width, size.height) * 0.56,
       );
 
-      qrBox ??= Rect.fromLTWH(
-        size.width * 0.20,
-        size.height * 0.20,
-        size.width * 0.60,
-        size.width * 0.60,
+      final Rect qrBoxFinal = qrBox!;
+
+      final double gapModules = shapeGap.clamp(0.0, 3.0);
+      final double probeQt = qrBoxFinal.width / (m + 2.0);
+
+      final double embedInsetModules = 1.10 + gapModules * 0.55;
+      final double embedInsetPx = math.min(
+        probeQt * embedInsetModules,
+        qrBoxFinal.width * 0.18,
       );
 
-      final Rect qrBoxFinal = qrBox;
+      final Rect embeddedBox = qrBoxFinal.deflate(embedInsetPx);
 
-      const double quietModules = 1.25;
-      final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
+      const double quietModules = 0.35;
+      final double qt = embeddedBox.width / (m + quietModules * 2.0);
 
       final Rect qrDataRect = Rect.fromLTWH(
-        qrBoxFinal.left + qt * quietModules,
-        qrBoxFinal.top + qt * quietModules,
+        embeddedBox.left + qt * quietModules,
+        embeddedBox.top + qt * quietModules,
         qt * m,
         qt * m,
       );
 
-      final Rect quietRect = qrDataRect.inflate(qt * 1.9);
+      final Rect quietRect = qrDataRect.inflate(qt * gapModules);
 
       final bool isLiquid =
           mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
