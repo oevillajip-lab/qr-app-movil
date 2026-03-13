@@ -1407,6 +1407,7 @@ class _MainScreenState extends State<MainScreen>
   /// Construye el SVG usando el estado actual
   String _buildSvg() {
     final estilo = _tab == 0 ? _estilo : _estiloAvz;
+    final isShape = estilo == "Formas (Máscara)";
     return QrSvgExporter.generate(
       data: _getFinalData(),
       estilo: estilo,
@@ -1414,6 +1415,9 @@ class _MainScreenState extends State<MainScreen>
       qrMode: _qrColorMode, qrDir: _qrGradDir,
       bgMode: _bgMode, bgC1: _bgC1, bgC2: _bgC2, bgGradDir: _bgGradDir,
       customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
+      // Bug Fix 1: pasar logo embebido en base64 para que aparezca en el SVG
+      logoBytes: isShape ? null : _logoBytes,
+      logoSizeFrac: isShape ? 0.0 : _effectiveLogo(false) / 270.0,
     );
   }
 
@@ -1498,42 +1502,27 @@ class _MainScreenState extends State<MainScreen>
     return start ? Offset.zero : Offset(0, size); // Vertical
   }
 
-  /// GUARDAR: PNG en galería (con alpha real si es transparente) + SVG via share sheet
+  /// GUARDAR: SVG en documentos + PNG en galería
   Future<void> _exportar() async {
     try {
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      final tmpDir = await getTemporaryDirectory();
-
-      // ── PNG → galería ─────────────────────────────────────────────────────
-      // BUG FIX 1: ImageGallerySaver.saveImage() recomprime los bytes como JPEG
-      // internamente en Android, descartando el canal alpha → fondo negro.
-      // Con saveFile() el PNG se escribe tal cual, preservando la transparencia.
+      // PNG → galería
       final pngBytes = await _renderPng();
-      if (_bgMode == "Transparente") {
-        final pngFile = File('${tmpDir.path}/QR_Logo_$ts.png');
-        await pngFile.writeAsBytes(pngBytes);
-        await ImageGallerySaver.saveFile(pngFile.path);
-      } else {
-        await ImageGallerySaver.saveImage(pngBytes, name: "QR_Logo_$ts");
-      }
+      await ImageGallerySaver.saveImage(
+        pngBytes,
+        name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
+      );
 
-      // ── SVG → share sheet ─────────────────────────────────────────────────
-      // BUG FIX 2: getApplicationDocumentsDirectory() es un directorio PRIVADO
-      // de la app en Android; el usuario nunca lo puede ver ni abrir.
-      // Solución: compartir el SVG directamente vía Share.shareXFiles().
+      // SVG → carpeta de documentos de la app
       final svg = _buildSvg();
       final svgBytes = Uint8List.fromList(utf8.encode(svg));
-      final svgFile = File('${tmpDir.path}/QR_Logo_$ts.svg');
+      final docsDir = await getApplicationDocumentsDirectory();
+      final svgFile = File('${docsDir.path}/QR_Logo.svg');
       await svgFile.writeAsBytes(svgBytes);
-      await Share.shareXFiles(
-        [XFile(svgFile.path, mimeType: 'image/svg+xml')],
-        text: 'Exportado con QR+Logo',
-      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("✅ PNG guardado en galería · SVG listo para compartir"),
+            content: Text("✅ PNG guardado en galería · SVG en documentos"),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.black,
           ),
@@ -1919,9 +1908,12 @@ class QrAdvancedPainter extends CustomPainter {
   List<List<bool>> _buildLogoExcl(int m, double t) {
     final excl = List.generate(m, (_) => List.filled(m, false));
     if (logoImage == null || outerMask == null || logoSize <= 0) return excl;
+    // Bug Fix 2: usar 270.0 como referencia de canvas (igual que QrMasterPainter)
+    // Antes usaba m*t (pixels reales del canvas de exportación), lo que causaba
+    // que el logo apareciera muy pequeño en Split porque effLogo ya venía
+    // escalado a 1024px pero _safeLogoMax lo clampea a max 85 (espacio 270).
     final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
-    final canvasSize = m * t;
-    final lf = effLogo / canvasSize;
+    final lf = effLogo / 270.0;
     final ls = (1 - lf) / 2.0; final le = ls + lf;
     final base = List.generate(m, (_) => List.filled(m, false));
     for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
@@ -2030,175 +2022,57 @@ class QrAdvancedPainter extends CustomPainter {
     else { pE.color = qrC1; pI.color = qrC1; }
 
     if (isShape) {
+      // ── Bug Fix 3: el QR completo se escala para llenar la silueta ──
+      // Antes: se dibujaba decoración aleatoria en la forma + QR pequeño dentro.
+      // Ahora: el QR ocupa todo el canvas y solo se dibujan los módulos
+      // que caen DENTRO de la silueta cargada, igual que el ejemplo del árbol.
       final int maskW = math.max(size.width.round(), 1);
       final int maskH = math.max(size.height.round(), 1);
       final canvasMask = _buildCanvasShapeMask(maskW, maskH);
 
-      int qrDataCells = 0, qrDarkCells = 0;
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        if (_isEye(r, c, m)) continue;
-        qrDataCells++;
-        if (qr.isDark(r, c)) qrDarkCells++;
-      }
-      final double qrDarkRatio = qrDataCells == 0 ? 0.55 : (qrDarkCells / qrDataCells).clamp(0.35, 0.75);
-
-      bool insideShapePoint(double px, double py) {
+      bool insideShape(double px, double py) {
         final int x = px.floor().clamp(0, maskW - 1).toInt();
         final int y = py.floor().clamp(0, maskH - 1).toInt();
         return canvasMask[y][x];
       }
 
-      bool rectWellInsideShape(Rect rect) {
-        const probes = [0.18, 0.50, 0.82];
-        for (final py in probes) for (final px in probes) {
-          if (!insideShapePoint(rect.left + rect.width * px, rect.top + rect.height * py)) return false;
-        }
-        return true;
-      }
+      // QR ocupa todo el canvas con zona de silencio de 1 módulo a cada lado
+      final double qt = size.width / (m + 2.0);
+      final Rect qrDataRect = Rect.fromLTWH(qt, qt, qt * m, qt * m);
 
-      void drawDecorSilhouette({Rect? reservedRect, required double moduleStep}) {
-        final double decoT = moduleStep.clamp(1.6, 14.0).toDouble();
-        final int cols = (size.width / decoT).ceil();
-        final int rows = (size.height / decoT).ceil();
-
-        bool cellAllowed(int rr, int cc) {
-          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
-          final Rect cellRect = Rect.fromLTWH(cc * decoT, rr * decoT, decoT, decoT);
-          if (cellRect.right > size.width || cellRect.bottom > size.height) return false;
-          if (reservedRect != null && reservedRect.overlaps(cellRect)) return false;
-          if (!rectWellInsideShape(cellRect)) return false;
-          return true;
-        }
-
-        int hashCell(int rr, int cc) {
-          int v = ((rr + 11) * 73856093) ^ ((cc + 17) * 19349663) ^ ((m + 23) * 83492791);
-          v ^= (v >> 13); v ^= (v << 7);
-          return v & 0x7fffffff;
-        }
-
-        final bool isLiquidStyle = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-        final bool isBarsStyle = mapSubStyle.contains("Barras");
-        final bool isDotsStyle = mapSubStyle.contains("Puntos");
-        final bool isDiamondStyle = mapSubStyle.contains("Diamantes");
-        final bool isNormalStyle = mapSubStyle.contains("Cuadrado") || mapSubStyle.contains("Normal");
-
-        int density = (qrDarkRatio * 100).round();
-        if (isBarsStyle) density += 2;
-        if (isLiquidStyle) density += 1;
-        if (isNormalStyle) density += 2;
-        if (isDotsStyle) density -= 1;
-        if (isDiamondStyle) density -= 1;
-        density = density.clamp(42, 68);
-
-        final active = List.generate(rows, (rr) => List.generate(cols, (cc) {
-          if (!cellAllowed(rr, cc)) return false;
-          return (hashCell(rr, cc) % 100) < density;
-        }));
-
-        bool on(int rr, int cc) {
-          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
-          return active[rr][cc];
-        }
-
-        if (isBarsStyle) {
-          for (int cc = 0; cc < cols; cc++) for (int rr = 0; rr < rows; rr++) {
-            if (!on(rr, cc)) continue;
-            if (rr > 0 && on(rr - 1, cc)) continue;
-            int endR = rr; while (endR + 1 < rows && on(endR + 1, cc)) endR++;
-            canvas.drawRRect(RRect.fromRectAndRadius(
-                Rect.fromLTWH(cc * decoT + decoT * 0.10, rr * decoT, decoT * 0.80, (endR - rr + 1) * decoT),
-                Radius.circular(decoT * 0.38)), solidPaint);
-          }
-          return;
-        }
-
-        if (isLiquidStyle) {
-          final decoLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
-              ..strokeWidth = decoT..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-          if (grad != null) decoLiquidPen.shader = grad; else decoLiquidPen.color = qrC1;
-          final Path decoPath = Path();
-          for (int rr = 0; rr < rows; rr++) for (int cc = 0; cc < cols; cc++) {
-            if (!on(rr, cc)) continue;
-            final double x = cc * decoT, y = rr * decoT;
-            final double cx = x + decoT / 2, cy = y + decoT / 2;
-            decoPath.moveTo(cx, cy); decoPath.lineTo(cx, cy);
-            if (on(rr, cc + 1)) { decoPath.moveTo(cx, cy); decoPath.lineTo(cx + decoT, cy); }
-            if (on(rr + 1, cc)) { decoPath.moveTo(cx, cy); decoPath.lineTo(cx, cy + decoT); }
-          }
-          canvas.drawPath(decoPath, decoLiquidPen);
-          return;
-        }
-
-        for (int rr = 0; rr < rows; rr++) for (int cc = 0; cc < cols; cc++) {
-          if (!on(rr, cc)) continue;
-          final double x = cc * decoT, y = rr * decoT;
-          final double cx = x + decoT / 2, cy = y + decoT / 2;
-          if (isDotsStyle) {
-            final double h = (hashCell(rr, cc) % 100) / 100.0;
-            canvas.drawCircle(Offset(cx, cy), decoT * (0.35 + 0.15 * h), solidPaint);
-          } else if (isDiamondStyle) {
-            final double h = (hashCell(rr, cc) % 100) / 100.0;
-            final double sc = 0.65 + 0.22 * h; final double off = decoT * (1 - sc) / 2;
-            canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + decoT - off, cy)
-                ..lineTo(cx, y + decoT - off)..lineTo(x + off, cy)..close(), solidPaint);
-          } else {
-            canvas.drawRect(Rect.fromLTWH(x, y, decoT + 0.2, decoT + 0.2), solidPaint);
-          }
-        }
-      }
-
-      final int preferredSide = math.min(math.min(maskW, maskH),
-          math.max(((m + 4) * 2.8).round(), 80)).toInt();
-      final int relaxedSide = math.min(math.min(maskW, maskH),
-          math.max(((m + 4) * 2.2).round(), 60)).toInt();
-
-      Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
-      qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
-      qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
-
-      if (qrBox == null) {
-        final double side = size.width * 0.65;
-        final double left = (size.width - side) / 2;
-        final double top = (size.height - side) / 2;
-        qrBox = Rect.fromLTWH(left, top, side, side);
-      }
-      final Rect qrBoxFinal = qrBox!;
-
-      const double quietModules = 1.5;
-      final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
-      final Rect qrDataRect = Rect.fromLTWH(
-          qrBoxFinal.left + qt * quietModules, qrBoxFinal.top + qt * quietModules, qt * m, qt * m);
-
-      drawDecorSilhouette(reservedRect: qrDataRect.inflate(qt * 2.0), moduleStep: qt);
-
-      final qrLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
-          ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
+      final qrLiquidPen = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = qt
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
       if (grad != null) qrLiquidPen.shader = grad; else qrLiquidPen.color = qrC1;
 
+      // Un módulo está OK si es oscuro, no es ojo, y su centro cae dentro de la silueta
       bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
         final double mx = qrDataRect.left + c * qt + qt * 0.5;
         final double my = qrDataRect.top + r * qt + qt * 0.5;
-        if (!insideShapePoint(mx, my)) return false;
-        return true;
+        return insideShape(mx, my);
       }
 
       final bool isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-      final bool isBars = mapSubStyle.contains("Barras");
-      final bool isDots = mapSubStyle.contains("Puntos");
+      final bool isBars   = mapSubStyle.contains("Barras");
+      final bool isDots   = mapSubStyle.contains("Puntos");
       final bool isDiamonds = mapSubStyle.contains("Diamantes");
       final qrPath = Path();
 
       EyeStyle eyeStyle = EyeStyle.rect;
-      if (mapSubStyle.contains("Puntos")) eyeStyle = EyeStyle.circ;
+      if (mapSubStyle.contains("Puntos"))   eyeStyle = EyeStyle.circ;
       if (mapSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
 
+      // Dibujar módulos de datos (excluyendo ojos), clipados a la silueta
       for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
         if (!darkOk(r, c)) continue;
-        final double x = qrDataRect.left + c * qt;
-        final double y = qrDataRect.top + r * qt;
+        final double x  = qrDataRect.left + c * qt;
+        final double y  = qrDataRect.top  + r * qt;
         final double cx = x + qt / 2, cy = y + qt / 2;
         if (isLiquid) {
           qrPath.moveTo(cx, cy); qrPath.lineTo(cx, cy);
@@ -2217,17 +2091,20 @@ class QrAdvancedPainter extends CustomPainter {
         } else if (isDiamonds) {
           final double h = ((r * 17 + c * 31) % 100) / 100.0;
           final double sc = 0.65 + 0.22 * h; final double off = qt * (1 - sc) / 2;
-          canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + qt - off, cy)
-              ..lineTo(cx, y + qt - off)..lineTo(x + off, cy)..close(), solidPaint);
+          canvas.drawPath(Path()
+            ..moveTo(cx, y + off)..lineTo(x + qt - off, cy)
+            ..lineTo(cx, y + qt - off)..lineTo(x + off, cy)..close(), solidPaint);
         } else {
           canvas.drawRect(Rect.fromLTWH(x, y, qt + 0.2, qt + 0.2), solidPaint);
         }
       }
       if (isLiquid) canvas.drawPath(qrPath, qrLiquidPen);
 
-      _drawEye(canvas, qrDataRect.left, qrDataRect.top, qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.right - 7 * qt, qrDataRect.top, qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
+      // Ojos: siempre se dibujan (son obligatorios para escanear el QR).
+      // La silueta los recorta visualmente si caen fuera — efecto artístico intencional.
+      _drawEye(canvas, qrDataRect.left,              qrDataRect.top,              qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.right - 7 * qt,    qrDataRect.top,              qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.left,              qrDataRect.bottom - 7 * qt,  qt, pE, pI, eyeStyle);
 
     } else if (isSplit) {
       final excl = _buildLogoExcl(m, t);

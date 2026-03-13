@@ -20,7 +20,9 @@
 //     // guardá como .svg
 // ═══════════════════════════════════════════════════════════════════
 
+import 'dart:convert' show base64Encode;
 import 'dart:math' as math;
+import 'dart:typed_data' show Uint8List;
 import 'dart:ui' show Color;
 import 'package:qr/qr.dart';
 
@@ -42,6 +44,8 @@ class QrSvgExporter {
     required bool customEyes,
     required Color eyeExt,
     required Color eyeInt,
+    Uint8List? logoBytes,     // PNG del logo (null = sin logo)
+    double logoSizeFrac = 0.0, // fracción del canvas (0.0–0.52)
     double size = 1024,
   }) {
     // Construir matriz QR
@@ -123,6 +127,17 @@ class QrSvgExporter {
     buf.write(_eye(0,        0,        t, extFill, intFill, eyeCircle, eyeDiamond));
     buf.write(_eye((m-7)*t,  0,        t, extFill, intFill, eyeCircle, eyeDiamond));
     buf.write(_eye(0,        (m-7)*t,  t, extFill, intFill, eyeCircle, eyeDiamond));
+
+    // ── Logo centrado (si existe) ────────────────────────────────────
+    if (logoBytes != null && logoSizeFrac > 0) {
+      final b64 = base64Encode(logoBytes);
+      final double ls = size * logoSizeFrac;
+      final double lo = (size - ls) / 2;
+      buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
+          'width="${_f(ls)}" height="${_f(ls)}" '
+          'preserveAspectRatio="xMidYMid meet" '
+          'href="data:image/png;base64,$b64"/>');
+    }
 
     buf.writeln('</svg>');
     return buf.toString();
