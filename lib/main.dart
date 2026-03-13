@@ -2015,222 +2015,204 @@ class QrAdvancedPainter extends CustomPainter {
     else { pE.color = qrC1; pI.color = qrC1; }
 
     if (isShape) {
-      // ═══════════════════════════════════════════════════════════════
-      // FORMAS — concepto correcto:
-      //
-      //  CAPA 1 (relleno): toda la silueta se rellena con el mismo
-      //    estilo (liquid/dots/barras/etc) usando una grilla del mismo
-      //    paso que el QR — esto forma la figura visible (el árbol).
-      //
-      //  CAPA 2 (QR): el QR se dibuja CENTRADO dentro del bounding-box
-      //    de la silueta al ~75% del lado menor, con todos sus módulos
-      //    y los 3 ojos. Solo los módulos oscuros QUE CAEN DENTRO de la
-      //    silueta se dibujan (la zona del tronco delgado puede recortar
-      //    algún módulo de datos, pero los ojos siempre están en la copa).
-      //
-      //  Resultado: ves la forma completa hecha del patrón; el QR está
-      //    camuflado dentro con el mismo estilo y se puede escanear.
-      // ═══════════════════════════════════════════════════════════════
-
-      // ── 0) Silueta ──────────────────────────────────────────────────
       final int maskW = math.max(size.width.round(), 1);
       final int maskH = math.max(size.height.round(), 1);
       final canvasMask = _buildCanvasShapeMask(maskW, maskH);
 
-      bool insideShape(double px, double py) {
-        final int ix = px.floor().clamp(0, maskW - 1).toInt();
-        final int iy = py.floor().clamp(0, maskH - 1).toInt();
-        return canvasMask[iy][ix];
+      int qrDataCells = 0, qrDarkCells = 0;
+      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
+        if (_isEye(r, c, m)) continue;
+        qrDataCells++;
+        if (qr.isDark(r, c)) qrDarkCells++;
+      }
+      final double qrDarkRatio = qrDataCells == 0 ? 0.55 : (qrDarkCells / qrDataCells).clamp(0.35, 0.75);
+
+      bool insideShapePoint(double px, double py) {
+        final int x = px.floor().clamp(0, maskW - 1).toInt();
+        final int y = py.floor().clamp(0, maskH - 1).toInt();
+        return canvasMask[y][x];
       }
 
-      // ── 1) Bounding box tight de la silueta ────────────────────────
-      int bbMinX = maskW, bbMaxX = 0, bbMinY = maskH, bbMaxY = 0;
-      for (int y = 0; y < maskH; y++) for (int x = 0; x < maskW; x++) {
-        if (!canvasMask[y][x]) continue;
-        if (x < bbMinX) bbMinX = x; if (x > bbMaxX) bbMaxX = x;
-        if (y < bbMinY) bbMinY = y; if (y > bbMaxY) bbMaxY = y;
-      }
-      if (bbMinX > bbMaxX || bbMinY > bbMaxY) return;
-
-      final double bbW = (bbMaxX - bbMinX + 1).toDouble();
-      final double bbH = (bbMaxY - bbMinY + 1).toDouble();
-      final double bbSide = math.min(bbW, bbH);
-
-      // ── 2) Tamaño del paso (mismo para QR y para relleno decorativo)
-      //    El QR ocupa ~75% del lado menor del bounding box.
-      //    qt = tamaño de módulo del QR.
-      final double qt = (bbSide * 0.75) / (m + 2.0);
-
-      // QR centrado en el bounding box
-      final double qrW    = qt * m;
-      final double qrH    = qt * m;
-      final double qrLeft = bbMinX + (bbW - qrW) / 2.0;
-      final double qrTop  = bbMinY + (bbH - qrH) / 2.0;
-      final Rect qrDataRect = Rect.fromLTWH(qrLeft, qrTop, qrW, qrH);
-
-      // ── 3) Estilos ──────────────────────────────────────────────────
-      final bool isLiquid   = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-      final bool isBars     = mapSubStyle.contains("Barras");
-      final bool isDots     = mapSubStyle.contains("Puntos");
-      final bool isDiamonds = mapSubStyle.contains("Diamantes");
-
-      EyeStyle eyeStyle = EyeStyle.rect;
-      if (mapSubStyle.contains("Puntos"))    eyeStyle = EyeStyle.circ;
-      if (mapSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
-
-      final liquidPen = Paint()
-        ..isAntiAlias = true..style = PaintingStyle.stroke
-        ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-      if (grad != null) liquidPen.shader = grad; else liquidPen.color = qrC1;
-
-      // ── Helper: dibujar un módulo decorativo en posición (px,py) ───
-      // Se usa para el relleno de la forma y para los módulos del QR.
-      int hashXY(int ix, int iy) {
-        int v = ((iy + 11) * 73856093) ^ ((ix + 17) * 19349663);
-        v ^= (v >> 13); v ^= (v << 7);
-        return v & 0x7fffffff;
-      }
-
-      void drawModule(double px, double py, Path lPath) {
-        // px, py = esquina superior izquierda del módulo
-        final double cx = px + qt / 2, cy = py + qt / 2;
-        if (isLiquid) {
-          // Los segmentos liquid se añaden al path acumulador
-          lPath.moveTo(cx, cy); lPath.lineTo(cx, cy);
-        } else if (isBars) {
-          // Barras: se maneja por columna fuera de este helper
-        } else if (isDots) {
-          final double h = (hashXY(px.toInt(), py.toInt()) % 100) / 100.0;
-          canvas.drawCircle(Offset(cx, cy), qt * (0.35 + 0.15 * h), solidPaint);
-        } else if (isDiamonds) {
-          final double h = (hashXY(px.toInt(), py.toInt()) % 100) / 100.0;
-          final double sc = 0.65 + 0.22 * h; final double off = qt * (1 - sc) / 2;
-          canvas.drawPath(Path()
-            ..moveTo(cx, py + off)..lineTo(px + qt - off, cy)
-            ..lineTo(cx, py + qt - off)..lineTo(px + off, cy)..close(), solidPaint);
-        } else {
-          canvas.drawRect(Rect.fromLTWH(px, py, qt + 0.2, qt + 0.2), solidPaint);
+      bool rectWellInsideShape(Rect rect) {
+        const probes = [0.18, 0.50, 0.82];
+        for (final py in probes) for (final px in probes) {
+          if (!insideShapePoint(rect.left + rect.width * px, rect.top + rect.height * py)) return false;
         }
+        return true;
       }
 
-      // ── 4) CAPA 1: Relleno decorativo de toda la silueta ───────────
-      // Cubrimos el bounding box con una grilla de paso qt.
-      // Cada celda que cae dentro de la silueta Y no es parte del QR
-      // se dibuja con densidad ~55% (similar a un QR real).
-      // Los módulos QR reales se dibujarán encima en la capa 2.
-      final Path fillLiquidPath = Path();
+      void drawDecorSilhouette({Rect? reservedRect, required double moduleStep}) {
+        final double decoT = moduleStep.clamp(1.6, 14.0).toDouble();
+        final int cols = (size.width / decoT).ceil();
+        final int rows = (size.height / decoT).ceil();
 
-      // Para barras: necesitamos saber qué celdas están activas por columna
-      // Para liquid: acumulamos segmentos entre celdas vecinas activas
-      final int fillCols = (bbW / qt).ceil() + 2;
-      final int fillRows = (bbH / qt).ceil() + 2;
-
-      // active[row][col] = true si esa celda del relleno está "oscura"
-      final fillActive = List.generate(fillRows, (row) => List.generate(fillCols, (col) {
-        final double px = bbMinX + col * qt;
-        final double py = bbMinY + row * qt;
-        final double cx = px + qt / 2;
-        final double cy = py + qt / 2;
-        if (!insideShape(cx, cy)) return false;
-        // Excluir zona del QR (se dibuja en capa 2 con datos reales)
-        if (cx >= qrDataRect.left - qt && cx <= qrDataRect.right  + qt &&
-            cy >= qrDataRect.top  - qt && cy <= qrDataRect.bottom + qt) return false;
-        // Densidad ~55% usando hash determinista
-        return (hashXY(col, row) % 100) < 55;
-      }));
-
-      bool fillOn(int row, int col) {
-        if (row < 0 || row >= fillRows || col < 0 || col >= fillCols) return false;
-        return fillActive[row][col];
-      }
-
-      if (isBars) {
-        for (int col = 0; col < fillCols; col++) for (int row = 0; row < fillRows; row++) {
-          if (!fillOn(row, col)) continue;
-          if (row > 0 && fillOn(row - 1, col)) continue;
-          int endRow = row;
-          while (endRow + 1 < fillRows && fillOn(endRow + 1, col)) endRow++;
-          final double px = bbMinX + col * qt;
-          final double py = bbMinY + row * qt;
-          canvas.drawRRect(RRect.fromRectAndRadius(
-              Rect.fromLTWH(px + qt * 0.10, py, qt * 0.80, (endRow - row + 1) * qt),
-              Radius.circular(qt * 0.38)), solidPaint);
+        bool cellAllowed(int rr, int cc) {
+          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
+          final Rect cellRect = Rect.fromLTWH(cc * decoT, rr * decoT, decoT, decoT);
+          if (cellRect.right > size.width || cellRect.bottom > size.height) return false;
+          if (reservedRect != null && reservedRect.overlaps(cellRect)) return false;
+          if (!rectWellInsideShape(cellRect)) return false;
+          return true;
         }
-      } else {
-        for (int row = 0; row < fillRows; row++) for (int col = 0; col < fillCols; col++) {
-          if (!fillOn(row, col)) continue;
-          final double px = bbMinX + col * qt;
-          final double py = bbMinY + row * qt;
-          final double cx = px + qt / 2, cy = py + qt / 2;
-          if (isLiquid) {
-            fillLiquidPath.moveTo(cx, cy); fillLiquidPath.lineTo(cx, cy);
-            if (fillOn(row, col + 1)) { fillLiquidPath.moveTo(cx, cy); fillLiquidPath.lineTo(cx + qt, cy); }
-            if (fillOn(row + 1, col)) { fillLiquidPath.moveTo(cx, cy); fillLiquidPath.lineTo(cx, cy + qt); }
+
+        int hashCell(int rr, int cc) {
+          int v = ((rr + 11) * 73856093) ^ ((cc + 17) * 19349663) ^ ((m + 23) * 83492791);
+          v ^= (v >> 13); v ^= (v << 7);
+          return v & 0x7fffffff;
+        }
+
+        final bool isLiquidStyle = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+        final bool isBarsStyle = mapSubStyle.contains("Barras");
+        final bool isDotsStyle = mapSubStyle.contains("Puntos");
+        final bool isDiamondStyle = mapSubStyle.contains("Diamantes");
+        final bool isNormalStyle = mapSubStyle.contains("Cuadrado") || mapSubStyle.contains("Normal");
+
+        int density = (qrDarkRatio * 100).round();
+        if (isBarsStyle) density += 2;
+        if (isLiquidStyle) density += 1;
+        if (isNormalStyle) density += 2;
+        if (isDotsStyle) density -= 1;
+        if (isDiamondStyle) density -= 1;
+        density = density.clamp(42, 68);
+
+        final active = List.generate(rows, (rr) => List.generate(cols, (cc) {
+          if (!cellAllowed(rr, cc)) return false;
+          return (hashCell(rr, cc) % 100) < density;
+        }));
+
+        bool on(int rr, int cc) {
+          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) return false;
+          return active[rr][cc];
+        }
+
+        if (isBarsStyle) {
+          for (int cc = 0; cc < cols; cc++) for (int rr = 0; rr < rows; rr++) {
+            if (!on(rr, cc)) continue;
+            if (rr > 0 && on(rr - 1, cc)) continue;
+            int endR = rr; while (endR + 1 < rows && on(endR + 1, cc)) endR++;
+            canvas.drawRRect(RRect.fromRectAndRadius(
+                Rect.fromLTWH(cc * decoT + decoT * 0.10, rr * decoT, decoT * 0.80, (endR - rr + 1) * decoT),
+                Radius.circular(decoT * 0.38)), solidPaint);
+          }
+          return;
+        }
+
+        if (isLiquidStyle) {
+          final decoLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
+              ..strokeWidth = decoT..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
+          if (grad != null) decoLiquidPen.shader = grad; else decoLiquidPen.color = qrC1;
+          final Path decoPath = Path();
+          for (int rr = 0; rr < rows; rr++) for (int cc = 0; cc < cols; cc++) {
+            if (!on(rr, cc)) continue;
+            final double x = cc * decoT, y = rr * decoT;
+            final double cx = x + decoT / 2, cy = y + decoT / 2;
+            decoPath.moveTo(cx, cy); decoPath.lineTo(cx, cy);
+            if (on(rr, cc + 1)) { decoPath.moveTo(cx, cy); decoPath.lineTo(cx + decoT, cy); }
+            if (on(rr + 1, cc)) { decoPath.moveTo(cx, cy); decoPath.lineTo(cx, cy + decoT); }
+          }
+          canvas.drawPath(decoPath, decoLiquidPen);
+          return;
+        }
+
+        for (int rr = 0; rr < rows; rr++) for (int cc = 0; cc < cols; cc++) {
+          if (!on(rr, cc)) continue;
+          final double x = cc * decoT, y = rr * decoT;
+          final double cx = x + decoT / 2, cy = y + decoT / 2;
+          if (isDotsStyle) {
+            final double h = (hashCell(rr, cc) % 100) / 100.0;
+            canvas.drawCircle(Offset(cx, cy), decoT * (0.35 + 0.15 * h), solidPaint);
+          } else if (isDiamondStyle) {
+            final double h = (hashCell(rr, cc) % 100) / 100.0;
+            final double sc = 0.65 + 0.22 * h; final double off = decoT * (1 - sc) / 2;
+            canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + decoT - off, cy)
+                ..lineTo(cx, y + decoT - off)..lineTo(x + off, cy)..close(), solidPaint);
           } else {
-            drawModule(px, py, fillLiquidPath);
+            canvas.drawRect(Rect.fromLTWH(x, y, decoT + 0.2, decoT + 0.2), solidPaint);
           }
         }
-        if (isLiquid) canvas.drawPath(fillLiquidPath, liquidPen);
       }
 
-      // ── 5) CAPA 2: QR real centrado ─────────────────────────────────
-      // Solo módulos oscuros del QR cuyo centro cae dentro de la silueta.
-      bool qrDarkOk(int r, int c) {
+      final int preferredSide = math.min(math.min(maskW, maskH),
+          math.max(((m + 4) * 2.8).round(), 80)).toInt();
+      final int relaxedSide = math.min(math.min(maskW, maskH),
+          math.max(((m + 4) * 2.2).round(), 60)).toInt();
+
+      Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
+      qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
+      qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
+
+      if (qrBox == null) {
+        final double side = size.width * 0.65;
+        final double left = (size.width - side) / 2;
+        final double top = (size.height - side) / 2;
+        qrBox = Rect.fromLTWH(left, top, side, side);
+      }
+      final Rect qrBoxFinal = qrBox!;
+
+      const double quietModules = 1.5;
+      final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
+      final Rect qrDataRect = Rect.fromLTWH(
+          qrBoxFinal.left + qt * quietModules, qrBoxFinal.top + qt * quietModules, qt * m, qt * m);
+
+      drawDecorSilhouette(reservedRect: qrDataRect.inflate(qt * 2.0), moduleStep: qt);
+
+      final qrLiquidPen = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
+          ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
+      if (grad != null) qrLiquidPen.shader = grad; else qrLiquidPen.color = qrC1;
+
+      bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
         final double mx = qrDataRect.left + c * qt + qt * 0.5;
-        final double my = qrDataRect.top  + r * qt + qt * 0.5;
-        return insideShape(mx, my);
+        final double my = qrDataRect.top + r * qt + qt * 0.5;
+        if (!insideShapePoint(mx, my)) return false;
+        return true;
       }
 
-      final Path qrLiquidPath = Path();
-      final liquidPenQr = Paint()
-        ..isAntiAlias = true..style = PaintingStyle.stroke
-        ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
-      if (grad != null) liquidPenQr.shader = grad; else liquidPenQr.color = qrC1;
+      final bool isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+      final bool isBars = mapSubStyle.contains("Barras");
+      final bool isDots = mapSubStyle.contains("Puntos");
+      final bool isDiamonds = mapSubStyle.contains("Diamantes");
+      final qrPath = Path();
 
-      if (isBars) {
-        for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-          if (!qrDarkOk(r, c)) continue;
-          if (r > 0 && qrDarkOk(r - 1, c)) continue;
-          final double x = qrDataRect.left + c * qt;
-          final double y = qrDataRect.top  + r * qt;
-          int er = r; while (er + 1 < m && qrDarkOk(er + 1, c)) er++;
-          canvas.drawRRect(RRect.fromRectAndRadius(
-              Rect.fromLTWH(x + qt * 0.10, y, qt * 0.80, (er - r + 1) * qt),
-              Radius.circular(qt * 0.38)), solidPaint);
-        }
-      } else {
-        for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-          if (!qrDarkOk(r, c)) continue;
-          final double x  = qrDataRect.left + c * qt;
-          final double y  = qrDataRect.top  + r * qt;
-          final double cx = x + qt / 2, cy = y + qt / 2;
-          if (isLiquid) {
-            qrLiquidPath.moveTo(cx, cy); qrLiquidPath.lineTo(cx, cy);
-            if (qrDarkOk(r, c + 1)) { qrLiquidPath.moveTo(cx, cy); qrLiquidPath.lineTo(cx + qt, cy); }
-            if (qrDarkOk(r + 1, c)) { qrLiquidPath.moveTo(cx, cy); qrLiquidPath.lineTo(cx, cy + qt); }
-          } else if (isDots) {
-            final double h = ((r * 13 + c * 29) % 100) / 100.0;
-            canvas.drawCircle(Offset(cx, cy), qt * (0.35 + 0.15 * h), solidPaint);
-          } else if (isDiamonds) {
-            final double h = ((r * 17 + c * 31) % 100) / 100.0;
-            final double sc = 0.65 + 0.22 * h; final double off = qt * (1 - sc) / 2;
-            canvas.drawPath(Path()
-              ..moveTo(cx, y + off)..lineTo(x + qt - off, cy)
-              ..lineTo(cx, y + qt - off)..lineTo(x + off, cy)..close(), solidPaint);
-          } else {
-            canvas.drawRect(Rect.fromLTWH(x, y, qt + 0.2, qt + 0.2), solidPaint);
+      EyeStyle eyeStyle = EyeStyle.rect;
+      if (mapSubStyle.contains("Puntos")) eyeStyle = EyeStyle.circ;
+      if (mapSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
+
+      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
+        if (!darkOk(r, c)) continue;
+        final double x = qrDataRect.left + c * qt;
+        final double y = qrDataRect.top + r * qt;
+        final double cx = x + qt / 2, cy = y + qt / 2;
+        if (isLiquid) {
+          qrPath.moveTo(cx, cy); qrPath.lineTo(cx, cy);
+          if (darkOk(r, c + 1)) { qrPath.moveTo(cx, cy); qrPath.lineTo(cx + qt, cy); }
+          if (darkOk(r + 1, c)) { qrPath.moveTo(cx, cy); qrPath.lineTo(cx, cy + qt); }
+        } else if (isBars) {
+          if (r == 0 || !darkOk(r - 1, c)) {
+            int er = r; while (er + 1 < m && darkOk(er + 1, c)) er++;
+            canvas.drawRRect(RRect.fromRectAndRadius(
+                Rect.fromLTWH(x + qt * 0.10, y, qt * 0.80, (er - r + 1) * qt),
+                Radius.circular(qt * 0.38)), solidPaint);
           }
+        } else if (isDots) {
+          final double h = ((r * 13 + c * 29) % 100) / 100.0;
+          canvas.drawCircle(Offset(cx, cy), qt * (0.35 + 0.15 * h), solidPaint);
+        } else if (isDiamonds) {
+          final double h = ((r * 17 + c * 31) % 100) / 100.0;
+          final double sc = 0.65 + 0.22 * h; final double off = qt * (1 - sc) / 2;
+          canvas.drawPath(Path()..moveTo(cx, y + off)..lineTo(x + qt - off, cy)
+              ..lineTo(cx, y + qt - off)..lineTo(x + off, cy)..close(), solidPaint);
+        } else {
+          canvas.drawRect(Rect.fromLTWH(x, y, qt + 0.2, qt + 0.2), solidPaint);
         }
-        if (isLiquid) canvas.drawPath(qrLiquidPath, liquidPenQr);
       }
+      if (isLiquid) canvas.drawPath(qrPath, qrLiquidPen);
 
-      // ── 6) Ojos del QR (siempre dentro de la copa/cuerpo) ──────────
-      _drawEye(canvas, qrDataRect.left,           qrDataRect.top,           qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.right - 7 * qt, qrDataRect.top,           qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.left,           qrDataRect.bottom - 7*qt, qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.left, qrDataRect.top, qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.right - 7 * qt, qrDataRect.top, qt, pE, pI, eyeStyle);
+      _drawEye(canvas, qrDataRect.left, qrDataRect.bottom - 7 * qt, qt, pE, pI, eyeStyle);
 
     } else if (isSplit) {
       final excl = _buildLogoExcl(m, t);
