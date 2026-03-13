@@ -44,7 +44,9 @@ class QrSvgExporter {
     required bool customEyes,
     required Color eyeExt,
     required Color eyeInt,
-    Uint8List? logoBytes,     // PNG del logo (null = sin logo)
+    String? mapSubStyle,
+    String? advSubStyle,
+    Uint8List? logoBytes,      // PNG del logo (null = sin logo)
     double logoSizeFrac = 0.0, // fracción del canvas (0.0–0.52)
     double size = 1024,
   }) {
@@ -97,11 +99,23 @@ class QrSvgExporter {
         : _hex(qrC1);
 
     // ── Determinar qué helper llamar ────────────────────────────────
-    final bool isNormal    = estilo.contains("Cuadrado") || estilo.contains("Normal");
-    final bool isLiquid    = estilo.contains("Gusano") || estilo.contains("Liquid");
-    final bool isBars      = estilo.contains("Barras");
-    final bool isDots      = estilo.contains("Puntos");
-    final bool isDiamonds  = estilo.contains("Diamantes") || estilo.contains("Rombos");
+    // ── Resolver estilo real para SVG ───────────────────────────────
+    final bool isSplitStyle = estilo.contains("Split");
+    final bool isShapeStyle =
+        estilo.contains("Forma") || estilo.contains("Mapa");
+
+    final String effectiveStyle = isShapeStyle
+        ? (mapSubStyle ?? "Liquid Pro (Gusano)")
+        : isSplitStyle
+            ? (advSubStyle ?? "Liquid Pro (Gusano)")
+            : estilo;
+
+    final bool isLiquid =
+        effectiveStyle.contains("Gusano") || effectiveStyle.contains("Liquid");
+    final bool isBars = effectiveStyle.contains("Barras");
+    final bool isDots = effectiveStyle.contains("Puntos");
+    final bool isDiamonds =
+        effectiveStyle.contains("Diamantes") || effectiveStyle.contains("Rombos");
 
     // ── Módulos (sin ojos) ──────────────────────────────────────────
     if (isLiquid) {
@@ -113,7 +127,6 @@ class QrSvgExporter {
     } else if (isDiamonds) {
       buf.write(_drawDiamonds(qr, m, t, qrFill));
     } else {
-      // Normal / Split / Formas → cuadrados por defecto para SVG
       buf.write(_drawSquares(qr, m, t, qrFill));
     }
 
@@ -121,7 +134,7 @@ class QrSvgExporter {
     final String extFill = customEyes ? _hex(eyeExt) : qrFill;
     final String intFill = customEyes ? _hex(eyeInt) : qrFill;
 
-    final bool eyeCircle  = isDots;
+    final bool eyeCircle = isDots;
     final bool eyeDiamond = isDiamonds;
 
     buf.write(_eye(0,        0,        t, extFill, intFill, eyeCircle, eyeDiamond));
