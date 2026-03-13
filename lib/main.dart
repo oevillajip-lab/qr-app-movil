@@ -1610,17 +1610,32 @@ Future<void> _mostrarSelectorCompartir() async {
   // ═══════════════════════════════════════════════════════════════════
 
   /// Construye el SVG usando el estado actual
-  String _buildSvg() {
-    final estilo = _tab == 0 ? _estilo : _estiloAvz;
-    return QrSvgExporter.generate(
-      data: _getFinalData(),
-      estilo: estilo,
-      qrC1: _qrC1, qrC2: _qrC2,
-      qrMode: _qrColorMode, qrDir: _qrGradDir,
-      bgMode: _bgMode, bgC1: _bgC1, bgC2: _bgC2, bgGradDir: _bgGradDir,
-      customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-    );
-  }
+String _buildSvg() {
+  final estilo = _tab == 0 ? _estilo : _estiloAvz;
+  final isShape = estilo == "Formas (Máscara)";
+  final effLogo = _effectiveLogo(isShape);
+
+  return QrSvgExporter.generate(
+    data: _getFinalData(),
+    estilo: estilo,
+    qrC1: _qrC1,
+    qrC2: _qrC2,
+    qrMode: _qrColorMode,
+    qrDir: _qrGradDir,
+    bgMode: _bgMode,
+    bgC1: _bgC1,
+    bgC2: _bgC2,
+    bgGradDir: _bgGradDir,
+    customEyes: _customEyes,
+    eyeExt: _eyeExt,
+    eyeInt: _eyeInt,
+    mapSubStyle: _mapSubStyle,
+    advSubStyle: _advSubStyle,
+    logoBytes: isShape ? null : _logoBytes,
+    logoSizeFrac: isShape ? 0.0 : (effLogo / 270.0),
+    size: 1024,
+  );
+}
 
   /// Renderiza PNG 1024×1024 directo con PictureRecorder — sin capturar widget de pantalla
   Future<Uint8List> _renderPng() async {
