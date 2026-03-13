@@ -1498,27 +1498,42 @@ class _MainScreenState extends State<MainScreen>
     return start ? Offset.zero : Offset(0, size); // Vertical
   }
 
-  /// GUARDAR: SVG en documentos + PNG en galería
+  /// GUARDAR: PNG en galería (con alpha real si es transparente) + SVG via share sheet
   Future<void> _exportar() async {
     try {
-      // PNG → galería
-      final pngBytes = await _renderPng();
-      await ImageGallerySaver.saveImage(
-        pngBytes,
-        name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
-      );
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final tmpDir = await getTemporaryDirectory();
 
-      // SVG → carpeta de documentos de la app
+      // ── PNG → galería ─────────────────────────────────────────────────────
+      // BUG FIX 1: ImageGallerySaver.saveImage() recomprime los bytes como JPEG
+      // internamente en Android, descartando el canal alpha → fondo negro.
+      // Con saveFile() el PNG se escribe tal cual, preservando la transparencia.
+      final pngBytes = await _renderPng();
+      if (_bgMode == "Transparente") {
+        final pngFile = File('${tmpDir.path}/QR_Logo_$ts.png');
+        await pngFile.writeAsBytes(pngBytes);
+        await ImageGallerySaver.saveFile(pngFile.path);
+      } else {
+        await ImageGallerySaver.saveImage(pngBytes, name: "QR_Logo_$ts");
+      }
+
+      // ── SVG → share sheet ─────────────────────────────────────────────────
+      // BUG FIX 2: getApplicationDocumentsDirectory() es un directorio PRIVADO
+      // de la app en Android; el usuario nunca lo puede ver ni abrir.
+      // Solución: compartir el SVG directamente vía Share.shareXFiles().
       final svg = _buildSvg();
       final svgBytes = Uint8List.fromList(utf8.encode(svg));
-      final docsDir = await getApplicationDocumentsDirectory();
-      final svgFile = File('${docsDir.path}/QR_Logo.svg');
+      final svgFile = File('${tmpDir.path}/QR_Logo_$ts.svg');
       await svgFile.writeAsBytes(svgBytes);
+      await Share.shareXFiles(
+        [XFile(svgFile.path, mimeType: 'image/svg+xml')],
+        text: 'Exportado con QR+Logo',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("✅ PNG guardado en galería · SVG en documentos"),
+            content: Text("✅ PNG guardado en galería · SVG listo para compartir"),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.black,
           ),
