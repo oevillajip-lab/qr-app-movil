@@ -1407,7 +1407,6 @@ class _MainScreenState extends State<MainScreen>
   /// Construye el SVG usando el estado actual
   String _buildSvg() {
     final estilo = _tab == 0 ? _estilo : _estiloAvz;
-    final isShape = estilo == "Formas (Máscara)";
     return QrSvgExporter.generate(
       data: _getFinalData(),
       estilo: estilo,
@@ -1415,9 +1414,6 @@ class _MainScreenState extends State<MainScreen>
       qrMode: _qrColorMode, qrDir: _qrGradDir,
       bgMode: _bgMode, bgC1: _bgC1, bgC2: _bgC2, bgGradDir: _bgGradDir,
       customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-      // Bug Fix 1: pasar logo embebido en base64 para que aparezca en el SVG
-      logoBytes: isShape ? null : _logoBytes,
-      logoSizeFrac: isShape ? 0.0 : _effectiveLogo(false) / 270.0,
     );
   }
 
@@ -1908,12 +1904,9 @@ class QrAdvancedPainter extends CustomPainter {
   List<List<bool>> _buildLogoExcl(int m, double t) {
     final excl = List.generate(m, (_) => List.filled(m, false));
     if (logoImage == null || outerMask == null || logoSize <= 0) return excl;
-    // Bug Fix 2: usar 270.0 como referencia de canvas (igual que QrMasterPainter)
-    // Antes usaba m*t (pixels reales del canvas de exportación), lo que causaba
-    // que el logo apareciera muy pequeño en Split porque effLogo ya venía
-    // escalado a 1024px pero _safeLogoMax lo clampea a max 85 (espacio 270).
     final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
-    final lf = effLogo / 270.0;
+    final canvasSize = m * t;
+    final lf = effLogo / canvasSize;
     final ls = (1 - lf) / 2.0; final le = ls + lf;
     final base = List.generate(m, (_) => List.filled(m, false));
     for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
@@ -2022,53 +2015,80 @@ class QrAdvancedPainter extends CustomPainter {
     else { pE.color = qrC1; pI.color = qrC1; }
 
     if (isShape) {
-      // ── Bug Fix 3: el QR completo se escala para llenar la silueta ──
-      // Antes: se dibujaba decoración aleatoria en la forma + QR pequeño dentro.
-      // Ahora: el QR ocupa todo el canvas y solo se dibujan los módulos
-      // que caen DENTRO de la silueta cargada, igual que el ejemplo del árbol.
+      // ═══════════════════════════════════════════════════════════════
+      // FORMAS: el QR se escala para llenar el bounding-box TIGHT de la
+      // silueta. Solo los módulos cuyo centro cae DENTRO de la silueta
+      // se dibujan — los de afuera simplemente no existen.
+      // Los 3 ojos quedan dentro de la forma porque el QR cabe en ella.
+      // ═══════════════════════════════════════════════════════════════
+
+      // 1) Construir máscara de silueta en píxeles del canvas
       final int maskW = math.max(size.width.round(), 1);
       final int maskH = math.max(size.height.round(), 1);
       final canvasMask = _buildCanvasShapeMask(maskW, maskH);
 
+      // 2) Encontrar bounding box tight de la silueta
+      int bbMinX = maskW, bbMaxX = 0, bbMinY = maskH, bbMaxY = 0;
+      for (int y = 0; y < maskH; y++) {
+        for (int x = 0; x < maskW; x++) {
+          if (!canvasMask[y][x]) continue;
+          if (x < bbMinX) bbMinX = x;
+          if (x > bbMaxX) bbMaxX = x;
+          if (y < bbMinY) bbMinY = y;
+          if (y > bbMaxY) bbMaxY = y;
+        }
+      }
+      // Si no hay silueta válida, salir
+      if (bbMinX > bbMaxX || bbMinY > bbMaxY) return;
+
+      final double bbW = (bbMaxX - bbMinX + 1).toDouble();
+      final double bbH = (bbMaxY - bbMinY + 1).toDouble();
+
+      // 3) Escalar QR para que quepa en el bounding box con zona de silencio de 1 módulo
+      //    Usar el lado más pequeño para mantener el QR cuadrado
+      final double qtByW = bbW / (m + 2.0);
+      final double qtByH = bbH / (m + 2.0);
+      final double qt = math.min(qtByW, qtByH);
+
+      // Centrar el QR dentro del bounding box
+      final double qrW = qt * m;
+      final double qrH = qt * m;
+      final double qrLeft = bbMinX + (bbW - qrW) / 2.0;
+      final double qrTop  = bbMinY + (bbH - qrH) / 2.0;
+      final Rect qrDataRect = Rect.fromLTWH(qrLeft, qrTop, qrW, qrH);
+
+      // 4) Helper: ¿el centro de un módulo cae dentro de la silueta?
       bool insideShape(double px, double py) {
-        final int x = px.floor().clamp(0, maskW - 1).toInt();
-        final int y = py.floor().clamp(0, maskH - 1).toInt();
-        return canvasMask[y][x];
+        final int ix = px.floor().clamp(0, maskW - 1).toInt();
+        final int iy = py.floor().clamp(0, maskH - 1).toInt();
+        return canvasMask[iy][ix];
       }
 
-      // QR ocupa todo el canvas con zona de silencio de 1 módulo a cada lado
-      final double qt = size.width / (m + 2.0);
-      final Rect qrDataRect = Rect.fromLTWH(qt, qt, qt * m, qt * m);
-
-      final qrLiquidPen = Paint()
-        ..isAntiAlias = true
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = qt
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-      if (grad != null) qrLiquidPen.shader = grad; else qrLiquidPen.color = qrC1;
-
-      // Un módulo está OK si es oscuro, no es ojo, y su centro cae dentro de la silueta
+      // 5) Módulos de datos (excluye ojos)
       bool darkOk(int r, int c) {
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
         final double mx = qrDataRect.left + c * qt + qt * 0.5;
-        final double my = qrDataRect.top + r * qt + qt * 0.5;
+        final double my = qrDataRect.top  + r * qt + qt * 0.5;
         return insideShape(mx, my);
       }
 
-      final bool isLiquid = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
-      final bool isBars   = mapSubStyle.contains("Barras");
-      final bool isDots   = mapSubStyle.contains("Puntos");
+      final bool isLiquid   = mapSubStyle.contains("Gusano") || mapSubStyle.contains("Liquid");
+      final bool isBars     = mapSubStyle.contains("Barras");
+      final bool isDots     = mapSubStyle.contains("Puntos");
       final bool isDiamonds = mapSubStyle.contains("Diamantes");
       final qrPath = Path();
 
+      final qrLiquidPen = Paint()
+        ..isAntiAlias = true..style = PaintingStyle.stroke
+        ..strokeWidth = qt..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round;
+      if (grad != null) qrLiquidPen.shader = grad; else qrLiquidPen.color = qrC1;
+
       EyeStyle eyeStyle = EyeStyle.rect;
-      if (mapSubStyle.contains("Puntos"))   eyeStyle = EyeStyle.circ;
+      if (mapSubStyle.contains("Puntos"))    eyeStyle = EyeStyle.circ;
       if (mapSubStyle.contains("Diamantes")) eyeStyle = EyeStyle.diamond;
 
-      // Dibujar módulos de datos (excluyendo ojos), clipados a la silueta
       for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
         if (!darkOk(r, c)) continue;
         final double x  = qrDataRect.left + c * qt;
@@ -2100,11 +2120,25 @@ class QrAdvancedPainter extends CustomPainter {
       }
       if (isLiquid) canvas.drawPath(qrPath, qrLiquidPen);
 
-      // Ojos: siempre se dibujan (son obligatorios para escanear el QR).
-      // La silueta los recorta visualmente si caen fuera — efecto artístico intencional.
-      _drawEye(canvas, qrDataRect.left,              qrDataRect.top,              qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.right - 7 * qt,    qrDataRect.top,              qt, pE, pI, eyeStyle);
-      _drawEye(canvas, qrDataRect.left,              qrDataRect.bottom - 7 * qt,  qt, pE, pI, eyeStyle);
+      // 6) Dibujar los 3 ojos solo si su centro cae dentro de la silueta.
+      //    Al estar el QR escalado para caber en la forma, los ojos quedan
+      //    naturalmente dentro. Si alguno cae justo en un borde delgado
+      //    (ej. tronco de árbol) igual se dibuja — es necesario para escanear.
+      void drawEyeClipped(double ox, double oy) {
+        final double cx = ox + 3.5 * qt;
+        final double cy = oy + 3.5 * qt;
+        // Dibujar si el centro del ojo está dentro, o si al menos 4 de las
+        // 9 esquinas interiores del ojo están dentro (ojos en bordes curvos)
+        int hits = 0;
+        for (final fy in [0.2, 0.5, 0.8]) for (final fx in [0.2, 0.5, 0.8]) {
+          if (insideShape(ox + fx * 7 * qt, oy + fy * 7 * qt)) hits++;
+        }
+        if (hits >= 4) _drawEye(canvas, ox, oy, qt, pE, pI, eyeStyle);
+      }
+
+      drawEyeClipped(qrDataRect.left,             qrDataRect.top);
+      drawEyeClipped(qrDataRect.right - 7 * qt,   qrDataRect.top);
+      drawEyeClipped(qrDataRect.left,             qrDataRect.bottom - 7 * qt);
 
     } else if (isSplit) {
       final excl = _buildLogoExcl(m, t);
