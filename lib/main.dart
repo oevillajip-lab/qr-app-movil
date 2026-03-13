@@ -1,3 +1,5 @@
+import 'dart:convert' show utf8;
+import 'qr_svg_exporter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr/qr.dart';
@@ -365,7 +367,6 @@ class _MainScreenState extends State<MainScreen>
     case "Círculo":
       return dist <= r;
     case "Triángulo":
-      // Equilátero centrado, punta arriba
       final double h = r * math.sqrt(3) / 2;
       final double topY = cy - h * 2 / 3;
       final double botY = cy + h / 3;
@@ -376,7 +377,6 @@ class _MainScreenState extends State<MainScreen>
     case "Rombo":
       return dx.abs() / r + dy.abs() / r <= 1.0;
     case "Estrella":
-      // 5 puntas perfecta
       final double angle = math.atan2(dx, -dy);
       final double sector = math.pi * 2 / 5;
       final double normAngle = ((angle % sector) + sector) % sector;
@@ -386,13 +386,11 @@ class _MainScreenState extends State<MainScreen>
       final double limitR = r * 0.42 + (r * 0.97 - r * 0.42) * t;
       return dist <= limitR;
     case "Corazón":
-      // Corazón matemático clásico
       final double nx = dx / (r * 0.78);
       final double ny = -(dy - r * 0.15) / (r * 0.78);
       final double val = nx * nx + ny * ny - 1;
       return val * val * val <= nx * nx * ny * ny * ny;
     case "Flecha":
-      // Punta derecha, base izquierda
       final double nx2 = dx / r;
       final double ny2 = dy / r;
       if (nx2 >= -0.1) {
@@ -1063,7 +1061,7 @@ class _MainScreenState extends State<MainScreen>
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          // QR Preview
+          // QR Preview — solo visual, no se usa para exportar
           RepaintBoundary(
             key: _qrKey,
             child: Container(
@@ -1402,28 +1400,177 @@ class _MainScreenState extends State<MainScreen>
     return LinearGradient(colors: [c1, c2], begin: b, end: e);
   }
 
-  Future<void> _exportar() async {
-    final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-    final image = await boundary.toImage(pixelRatio: 6.0);
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    await ImageGallerySaver.saveImage(data!.buffer.asUint8List());
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("✅ QR guardado en galería"),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.black,
-        ));
+  // ═══════════════════════════════════════════════════════════════════
+  // EXPORT — SVG vectorial + PNG 1024×1024 sin capturar widget
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Construye el SVG usando el estado actual
+  String _buildSvg() {
+    final estilo = _tab == 0 ? _estilo : _estiloAvz;
+    return QrSvgExporter.generate(
+      data: _getFinalData(),
+      estilo: estilo,
+      qrC1: _qrC1, qrC2: _qrC2,
+      qrMode: _qrColorMode, qrDir: _qrGradDir,
+      bgMode: _bgMode, bgC1: _bgC1, bgC2: _bgC2, bgGradDir: _bgGradDir,
+      customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
+    );
   }
 
+  /// Renderiza PNG 1024×1024 directo con PictureRecorder — sin capturar widget de pantalla
+  Future<Uint8List> _renderPng() async {
+    const double exportSize = 1024.0;
+    final data = _getFinalData();
+    final estilo = _tab == 0 ? _estilo : _estiloAvz;
+    final isShape = estilo == "Formas (Máscara)";
+    final effLogo = _effectiveLogo(isShape) / 270.0 * exportSize;
+    final isAdvStyle = _tab == 1 && (estilo == "Split Liquid (Mitades)" || isShape);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Fondo
+    if (_bgMode != "Transparente") {
+      final Paint bgPaint = Paint();
+      if (_bgMode == "Degradado") {
+        bgPaint.shader = ui.Gradient.linear(
+          _gradOffset(_bgGradDir, true, exportSize),
+          _gradOffset(_bgGradDir, false, exportSize),
+          [_bgC1, _bgC2],
+        );
+      } else {
+        bgPaint.color = _bgMode == "Sólido (Color)" ? _bgC1 : Colors.white;
+      }
+      canvas.drawRect(Rect.fromLTWH(0, 0, exportSize, exportSize), bgPaint);
+    }
+
+    // QR
+    if (isAdvStyle) {
+      QrAdvancedPainter(
+        data: data, estiloAvanzado: estilo,
+        mapSubStyle: _mapSubStyle, advSubStyle: _advSubStyle,
+        splitDir: _splitDir,
+        logoImage: isShape ? null : _logoImage,
+        outerMask: isShape ? null : _outerMask,
+        shapeImage: _shapeImage, shapeMask: _shapeMask,
+        logoSize: isShape ? 0.0 : effLogo,
+        auraSize: isShape ? 0.0 : _auraSize,
+        qrC1: _qrC1, qrC2: _qrC2,
+        qrMode: _qrColorMode, qrDir: _qrGradDir,
+        customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
+      ).paint(canvas, const Size(exportSize, exportSize));
+    } else {
+      QrMasterPainter(
+        data: data, estilo: estilo,
+        logoImage: _logoImage, outerMask: _outerMask,
+        logoSize: effLogo, auraSize: _auraSize,
+        qrC1: _qrC1, qrC2: _qrC2,
+        qrMode: _qrColorMode, qrDir: _qrGradDir,
+        customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
+      ).paint(canvas, const Size(exportSize, exportSize));
+    }
+
+    // Logo encima si hay
+    if (_logoBytes != null && !isShape) {
+      final codec = await ui.instantiateImageCodec(
+        _logoBytes!,
+        targetWidth: effLogo.toInt(),
+        targetHeight: effLogo.toInt(),
+      );
+      final frame = await codec.getNextFrame();
+      canvas.drawImage(
+        frame.image,
+        Offset((exportSize - effLogo) / 2, (exportSize - effLogo) / 2),
+        Paint()..isAntiAlias = true,
+      );
+    }
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(exportSize.toInt(), exportSize.toInt());
+    final bd = await img.toByteData(format: ui.ImageByteFormat.png);
+    return bd!.buffer.asUint8List();
+  }
+
+  /// Helper: offset para degradado según dirección
+  Offset _gradOffset(String dir, bool start, double size) {
+    if (dir == "Horizontal") return start ? Offset.zero : Offset(size, 0);
+    if (dir == "Diagonal")   return start ? Offset.zero : Offset(size, size);
+    return start ? Offset.zero : Offset(0, size); // Vertical
+  }
+
+  /// GUARDAR: SVG en documentos + PNG en galería
+  Future<void> _exportar() async {
+    try {
+      // PNG → galería
+      final pngBytes = await _renderPng();
+      await ImageGallerySaver.saveImage(
+        pngBytes,
+        name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
+      );
+
+      // SVG → carpeta de documentos de la app
+      final svg = _buildSvg();
+      final svgBytes = Uint8List.fromList(utf8.encode(svg));
+      final docsDir = await getApplicationDocumentsDirectory();
+      final svgFile = File('${docsDir.path}/QR_Logo.svg');
+      await svgFile.writeAsBytes(svgBytes);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("✅ PNG guardado en galería · SVG en documentos"),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.black,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error al guardar: $e"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  /// COMPARTIR: envía SVG + PNG juntos
   Future<void> _compartir() async {
-    final boundary = _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-    final image = await boundary.toImage(pixelRatio: 6.0);
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    final bytes = data!.buffer.asUint8List();
-    final dir = await getTemporaryDirectory();
-    final file = await File('${dir.path}/QR+Logo.png').create();
-    await file.writeAsBytes(bytes);
-    await Share.shareXFiles([XFile(file.path)], text: 'Generado con QR+Logo');
+    try {
+      final tmpDir = await getTemporaryDirectory();
+
+      // PNG
+      final pngBytes = await _renderPng();
+      final pngFile = File('${tmpDir.path}/QR_Logo.png');
+      await pngFile.writeAsBytes(pngBytes);
+
+      // SVG
+      final svg = _buildSvg();
+      final svgBytes = Uint8List.fromList(utf8.encode(svg));
+      final svgFile = File('${tmpDir.path}/QR_Logo.svg');
+      await svgFile.writeAsBytes(svgBytes);
+
+      await Share.shareXFiles(
+        [
+          XFile(pngFile.path, mimeType: 'image/png'),
+          XFile(svgFile.path, mimeType: 'image/svg+xml'),
+        ],
+        text: 'Generado con QR+Logo',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error al compartir: $e"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -1478,7 +1625,6 @@ class StylePreviewPainter extends CustomPainter {
       for (int c = 0; c < m; c++) {
         final double x = c * t, y = r * t, cx = x + t / 2, cy = y + t / 2;
 
-        // Formas: usa máscara pentagonal para el preview
         if (style.contains("Formas")) {
           if (!qr.isDark(r, c) || isEye(r, c)) continue;
           final double nx = (c + 0.5) / m - 0.5;
@@ -1986,16 +2132,22 @@ class QrAdvancedPainter extends CustomPainter {
         }
       }
 
-final int preferredSide = math.min(math.min(maskW, maskH),
-    math.max(((m + 4) * 2.8).round(), 80)).toInt();
-final int relaxedSide = math.min(math.min(maskW, maskH),
-    math.max(((m + 4) * 2.2).round(), 60)).toInt();
+      final int preferredSide = math.min(math.min(maskW, maskH),
+          math.max(((m + 4) * 2.8).round(), 80)).toInt();
+      final int relaxedSide = math.min(math.min(maskW, maskH),
+          math.max(((m + 4) * 2.2).round(), 60)).toInt();
 
-Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
-qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
-qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
+      Rect? qrBox = _findBestQrSquare(canvasMask, minSide: preferredSide, step: 2);
+      qrBox ??= _findBestQrSquare(canvasMask, minSide: relaxedSide, step: 2);
+      qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
 
-      if (qrBox == null) {         final double side = size.width * 0.65;         final double left = (size.width - side) / 2;         final double top = (size.height - side) / 2;         qrBox = Rect.fromLTWH(left, top, side, side);       }       final Rect qrBoxFinal = qrBox!;
+      if (qrBox == null) {
+        final double side = size.width * 0.65;
+        final double left = (size.width - side) / 2;
+        final double top = (size.height - side) / 2;
+        qrBox = Rect.fromLTWH(left, top, side, side);
+      }
+      final Rect qrBoxFinal = qrBox!;
 
       const double quietModules = 1.5;
       final double qt = qrBoxFinal.width / (m + quietModules * 2.0);
@@ -2012,7 +2164,6 @@ qrBox ??= _findBestQrSquare(canvasMask, minSide: 52, step: 2);
         if (r < 0 || r >= m || c < 0 || c >= m) return false;
         if (!qr.isDark(r, c)) return false;
         if (_isEye(r, c, m)) return false;
-        // Verificar que el módulo esté dentro de la forma
         final double mx = qrDataRect.left + c * qt + qt * 0.5;
         final double my = qrDataRect.top + r * qt + qt * 0.5;
         if (!insideShapePoint(mx, my)) return false;
