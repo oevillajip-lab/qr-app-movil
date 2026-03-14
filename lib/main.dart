@@ -2335,6 +2335,19 @@ for (double side = maxCandidateSide; side >= minCandidateSide; side -= 5.0) {
       final double minSafeCov = aspectRatio < 0.6 ? 0.48 : 0.70;
       if (safeCov < minSafeCov) continue;
 
+      // Verificar que las 3 zonas de ojos estén dentro de la silueta
+      final double eyeW = side * 7.0 / (m + 2.0);
+      bool eyeInside(double ex, double ey) {
+        int hits = 0;
+        for (final fy in [0.15, 0.5, 0.85]) for (final fx in [0.15, 0.5, 0.85]) {
+          if (insideShapePoint(ex + fx * eyeW, ey + fy * eyeW)) hits++;
+        }
+        return hits >= 6;
+      }
+      if (!eyeInside(left, top)) continue;
+      if (!eyeInside(left + side - eyeW, top)) continue;
+      if (!eyeInside(left, top + side - eyeW)) continue;
+
       final double dx = rect.center.dx - shapeCenter.dx;
       final double dy = rect.center.dy - shapeCenter.dy;
       final double centerPenalty = (dx * dx + dy * dy) / (side * side);
