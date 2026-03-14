@@ -2310,9 +2310,10 @@ class QrAdvancedPainter extends CustomPainter {
       double bestScore = -1e18;
 
 final double aspectRatio = shapeBounds.width / math.max(shapeBounds.height, 1.0);
-final double maxCandidateSide = (aspectRatio < 0.6
-    ? shapeBounds.width * 0.92
-    : math.min(shapeBounds.width, shapeBounds.height) * 0.78);
+      final bool isNarrowShape = aspectRatio < 0.6 || aspectRatio > 1.6;
+      final double maxCandidateSide = isNarrowShape
+          ? math.min(shapeBounds.width, shapeBounds.height) * 0.88
+          : math.min(shapeBounds.width, shapeBounds.height) * 0.78;
 
 final double minCandidateSide = math.max(
   48.0,
@@ -2328,25 +2329,25 @@ for (double side = maxCandidateSide; side >= minCandidateSide; side -= 5.0) {
       final Rect rect = Rect.fromLTWH(left, top, side, side);
 
       final double cov = rectCoverage(rect);
-      final double minCov = aspectRatio < 0.6 ? 0.62 : 0.88;
+      final double minCov = isNarrowShape ? 0.62 : 0.88;
       if (cov < minCov) continue;
 
       final double safeCov = expandedCoverage(rect, safetyPad);
-      final double minSafeCov = aspectRatio < 0.6 ? 0.48 : 0.70;
+      final double minSafeCov = isNarrowShape ? 0.48 : 0.70;
       if (safeCov < minSafeCov) continue;
 
       // Verificar que las 3 zonas de ojos estén dentro de la silueta
+// Los 3 ojos deben estar 100% dentro de la silueta
       final double eyeW = side * 7.0 / (m + 2.0);
-      bool eyeInside(double ex, double ey) {
-        int hits = 0;
-        for (final fy in [0.15, 0.5, 0.85]) for (final fx in [0.15, 0.5, 0.85]) {
-          if (insideShapePoint(ex + fx * eyeW, ey + fy * eyeW)) hits++;
-        }
-        return hits >= 6;
+      bool eyeStrictlyInside(double ex, double ey) {
+        for (final fy in [0.05, 0.25, 0.5, 0.75, 0.95])
+          for (final fx in [0.05, 0.25, 0.5, 0.75, 0.95])
+            if (!insideShapePoint(ex + fx * eyeW, ey + fy * eyeW)) return false;
+        return true;
       }
-      if (!eyeInside(left, top)) continue;
-      if (!eyeInside(left + side - eyeW, top)) continue;
-      if (!eyeInside(left, top + side - eyeW)) continue;
+      if (!eyeStrictlyInside(left, top)) continue;
+      if (!eyeStrictlyInside(left + side - eyeW, top)) continue;
+      if (!eyeStrictlyInside(left, top + side - eyeW)) continue;
 
       final double dx = rect.center.dx - shapeCenter.dx;
       final double dy = rect.center.dy - shapeCenter.dy;
