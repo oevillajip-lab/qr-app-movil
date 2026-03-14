@@ -63,7 +63,8 @@ double size = 1024,
     final buf = StringBuffer();
 
     // ── Cabecera SVG ────────────────────────────────────────────────
-    buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
+buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:xlink="http://www.w3.org/1999/xlink" '
         'width="$size" height="$size" viewBox="0 0 $size $size">');
 
     // ── Definiciones (degradados) ───────────────────────────────────
@@ -187,10 +188,11 @@ double size = 1024,
       final b64 = base64Encode(logoBytes);
       final double ls = size * logoSizeFrac;
       final double lo = (size - ls) / 2;
-      buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
+buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
           'width="${_f(ls)}" height="${_f(ls)}" '
           'preserveAspectRatio="xMidYMid meet" '
-          'href="data:image/png;base64,$b64"/>');
+          'href="data:image/png;base64,$b64" '
+          'xlink:href="data:image/png;base64,$b64"/>');
     }
 
     buf.writeln('</svg>');
