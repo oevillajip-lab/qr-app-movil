@@ -1175,8 +1175,8 @@ Widget _buildBottomBar(bool isEmpty) => Container(
     children: [
       Expanded(
         child: _bigBtn(
-          "IMAGEN",
-          Icons.image_outlined,
+          "GUARDAR",
+          Icons.save_alt,
           isEmpty
               ? null
               : () async {
@@ -1185,21 +1185,7 @@ Widget _buildBottomBar(bool isEmpty) => Container(
                 },
         ),
       ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: _bigBtn(
-          "VECTOR",
-          Icons.hexagon_outlined,
-          isEmpty
-              ? null
-              : () async {
-                  HapticFeedback.heavyImpact();
-                  await _guardarSvg();
-                },
-          outlined: true,
-        ),
-      ),
-      const SizedBox(width: 8),
+      const SizedBox(width: 10),
       Expanded(
         child: _bigBtn(
           "COMPARTIR",
@@ -2323,14 +2309,14 @@ class QrAdvancedPainter extends CustomPainter {
       Rect? qrBox;
       double bestScore = -1e18;
 
-final double maxCandidateSide = math.min(
-  shapeBounds.width,
-  shapeBounds.height,
-) * 0.78;
+final double aspectRatio = shapeBounds.width / math.max(shapeBounds.height, 1.0);
+final double maxCandidateSide = (aspectRatio < 0.6
+    ? shapeBounds.width * 0.92
+    : math.min(shapeBounds.width, shapeBounds.height) * 0.78);
 
 final double minCandidateSide = math.max(
-  64.0,
-  (m + 2) * 2.10,
+  48.0,
+  (m + 2) * 1.80,
 );
 
 for (double side = maxCandidateSide; side >= minCandidateSide; side -= 5.0) {
@@ -2342,10 +2328,12 @@ for (double side = maxCandidateSide; side >= minCandidateSide; side -= 5.0) {
       final Rect rect = Rect.fromLTWH(left, top, side, side);
 
       final double cov = rectCoverage(rect);
-      if (cov < 0.88) continue;
+      final double minCov = aspectRatio < 0.6 ? 0.62 : 0.88;
+      if (cov < minCov) continue;
 
       final double safeCov = expandedCoverage(rect, safetyPad);
-      if (safeCov < 0.70) continue;
+      final double minSafeCov = aspectRatio < 0.6 ? 0.48 : 0.70;
+      if (safeCov < minSafeCov) continue;
 
       final double dx = rect.center.dx - shapeCenter.dx;
       final double dy = rect.center.dy - shapeCenter.dy;
