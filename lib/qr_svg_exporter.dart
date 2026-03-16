@@ -1,23 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
 // qr_svg_exporter.dart
 // Generador SVG vectorial para QR+Logo
-// Reemplaza el render de bitmap — calidad infinita, fondo transparente real
-//
-// USO en _MainScreenState:
-//   import 'qr_svg_exporter.dart';
-//
-//   En _exportar() y _compartir():
-//     final svg = QrSvgExporter.generate(
-//       data: _getFinalData(),
-//       estilo: _tab == 0 ? _estilo : _estiloAvz,
-//       qrC1: _qrC1, qrC2: _qrC2,
-//       qrMode: _qrColorMode, qrDir: _qrGradDir,
-//       bgMode: _bgMode, bgC1: _bgC1, bgC2: _bgC2, bgGradDir: _bgGradDir,
-//       customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-//       size: 1024,
-//     );
-//     final bytes = Uint8List.fromList(utf8.encode(svg));
-//     // guardá como .svg
 // ═══════════════════════════════════════════════════════════════════
 
 import 'dart:convert' show base64Encode;
@@ -35,9 +18,9 @@ class QrSvgExporter {
     required String estilo,
     required Color qrC1,
     required Color qrC2,
-    required String qrMode,   // "Sólido (Un Color)" | "Degradado Custom" | "Automático (Logo)"
-    required String qrDir,    // "Vertical" | "Horizontal" | "Diagonal"
-    required String bgMode,   // "Blanco (Default)" | "Transparente" | "Sólido (Color)" | "Degradado"
+    required String qrMode,
+    required String qrDir,
+    required String bgMode,
     required Color bgC1,
     required Color bgC2,
     required String bgGradDir,
@@ -46,44 +29,46 @@ class QrSvgExporter {
     required Color eyeInt,
     String? mapSubStyle,
     String? advSubStyle,
-Uint8List? logoBytes,      // PNG del logo (null = sin logo)
-double logoSizeFrac = 0.0, // fracción del canvas (0.0–0.52)
-double logoAuraModules = 0.0,
-double size = 1024,
+    Uint8List? logoBytes,
+    double logoSizeFrac = 0.0,
+    double logoAuraModules = 0.0,
+    double size = 1024,
   }) {
-    // Construir matriz QR
     final qrCode = QrCode.fromData(
       data: data,
       errorCorrectLevel: QrErrorCorrectLevel.H,
     );
     final qr = QrImage(qrCode);
     final int m = qr.moduleCount;
-    final double t = size / m;  // tamaño de cada módulo
+    final double t = size / m;
+
+    // ── Quiet-zone padding (igual que PNG) ──────────────────────────
+    final bool hasBg = bgMode != "Transparente";
+    final double pad = hasBg ? size * 0.078125 : 0.0; // ~80/1024
+    final double totalSize = size + 2 * pad;
+    final double cornerRadius = pad * 0.9;
 
     final buf = StringBuffer();
 
     // ── Cabecera SVG ────────────────────────────────────────────────
-buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
+    buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
         'xmlns:xlink="http://www.w3.org/1999/xlink" '
-        'width="$size" height="$size" viewBox="0 0 $size $size">');
+        'width="${_f(totalSize)}" height="${_f(totalSize)}" '
+        'viewBox="0 0 ${_f(totalSize)} ${_f(totalSize)}">');
 
-    // ── Definiciones (degradados) ───────────────────────────────────
+    // ── Definiciones ────────────────────────────────────────────────
     buf.writeln('<defs>');
-
-    // Degradado QR
     if (qrMode == "Degradado Custom") {
+      // Degradado QR relativo al área QR (size × size), no al canvas total
       buf.write(_linearGradientDef('qrGrad', qrC1, qrC2, qrDir, size));
     }
-
-    // Degradado fondo
     if (bgMode == "Degradado") {
-      buf.write(_linearGradientDef('bgGrad', bgC1, bgC2, bgGradDir, size));
+      buf.write(_linearGradientDef('bgGrad', bgC1, bgC2, bgGradDir, totalSize));
     }
-
     buf.writeln('</defs>');
 
-    // ── Fondo ───────────────────────────────────────────────────────
-    if (bgMode != "Transparente") {
+    // ── Fondo con bordes redondeados ────────────────────────────────
+    if (hasBg) {
       final String fill;
       if (bgMode == "Degradado") {
         fill = 'url(#bgGrad)';
@@ -92,18 +77,24 @@ buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
       } else {
         fill = '#ffffff';
       }
-      buf.writeln('<rect width="$size" height="$size" fill="$fill"/>');
+      if (cornerRadius > 0) {
+        buf.writeln('<rect width="${_f(totalSize)}" height="${_f(totalSize)}" '
+            'rx="${_f(cornerRadius)}" ry="${_f(cornerRadius)}" fill="$fill"/>');
+      } else {
+        buf.writeln('<rect width="${_f(totalSize)}" height="${_f(totalSize)}" fill="$fill"/>');
+      }
     }
 
-    // ── Fill/stroke del QR ──────────────────────────────────────────
+    // ── Todo el contenido QR se desplaza pad,pad ────────────────────
+    if (pad > 0) buf.writeln('<g transform="translate(${_f(pad)},${_f(pad)})">');
+
+    // ── Fill del QR ─────────────────────────────────────────────────
     final String qrFill = qrMode == "Degradado Custom"
         ? 'url(#qrGrad)'
         : _hex(qrC1);
 
-        // ── Resolver estilo real para SVG ───────────────────────────────
     final bool isSplitStyle = estilo.contains("Split");
-    final bool isShapeStyle =
-        estilo.contains("Forma") || estilo.contains("Mapa");
+    final bool isShapeStyle = estilo.contains("Forma") || estilo.contains("Mapa");
 
     final String effectiveStyle = isShapeStyle
         ? (mapSubStyle ?? "Liquid Pro (Gusano)")
@@ -125,51 +116,20 @@ buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
 
     // ── Módulos (sin ojos) ──────────────────────────────────────────
     if (isLiquid) {
-      buf.write(_drawLiquid(
-        qr,
-        m,
-        t,
-        qrFill,
-        size,
-        logoSizeFrac: effectiveLogoFrac,
-        logoAuraModules: effectiveAuraModules,
-      ));
+      buf.write(_drawLiquid(qr, m, t, qrFill, size,
+          logoSizeFrac: effectiveLogoFrac, logoAuraModules: effectiveAuraModules));
     } else if (isBars) {
-      buf.write(_drawBars(
-        qr,
-        m,
-        t,
-        qrFill,
-        logoSizeFrac: effectiveLogoFrac,
-        logoAuraModules: effectiveAuraModules,
-      ));
+      buf.write(_drawBars(qr, m, t, qrFill,
+          logoSizeFrac: effectiveLogoFrac, logoAuraModules: effectiveAuraModules));
     } else if (isDots) {
-      buf.write(_drawDots(
-        qr,
-        m,
-        t,
-        qrFill,
-        logoSizeFrac: effectiveLogoFrac,
-        logoAuraModules: effectiveAuraModules,
-      ));
+      buf.write(_drawDots(qr, m, t, qrFill,
+          logoSizeFrac: effectiveLogoFrac, logoAuraModules: effectiveAuraModules));
     } else if (isDiamonds) {
-      buf.write(_drawDiamonds(
-        qr,
-        m,
-        t,
-        qrFill,
-        logoSizeFrac: effectiveLogoFrac,
-        logoAuraModules: effectiveAuraModules,
-      ));
+      buf.write(_drawDiamonds(qr, m, t, qrFill,
+          logoSizeFrac: effectiveLogoFrac, logoAuraModules: effectiveAuraModules));
     } else {
-      buf.write(_drawSquares(
-        qr,
-        m,
-        t,
-        qrFill,
-        logoSizeFrac: effectiveLogoFrac,
-        logoAuraModules: effectiveAuraModules,
-      ));
+      buf.write(_drawSquares(qr, m, t, qrFill,
+          logoSizeFrac: effectiveLogoFrac, logoAuraModules: effectiveAuraModules));
     }
 
     // ── Ojos ────────────────────────────────────────────────────────
@@ -179,22 +139,23 @@ buf.writeln('<svg xmlns="http://www.w3.org/2000/svg" '
     final bool eyeCircle = isDots;
     final bool eyeDiamond = isDiamonds;
 
-    buf.write(_eye(0,        0,        t, extFill, intFill, eyeCircle, eyeDiamond));
-    buf.write(_eye((m-7)*t,  0,        t, extFill, intFill, eyeCircle, eyeDiamond));
-    buf.write(_eye(0,        (m-7)*t,  t, extFill, intFill, eyeCircle, eyeDiamond));
+    buf.write(_eye(0,       0,       t, extFill, intFill, eyeCircle, eyeDiamond));
+    buf.write(_eye((m-7)*t, 0,       t, extFill, intFill, eyeCircle, eyeDiamond));
+    buf.write(_eye(0,       (m-7)*t, t, extFill, intFill, eyeCircle, eyeDiamond));
 
-    // ── Logo centrado (si existe) ────────────────────────────────────
+    // ── Logo centrado ────────────────────────────────────────────────
     if (logoBytes != null && logoSizeFrac > 0) {
       final b64 = base64Encode(logoBytes);
       final double ls = size * logoSizeFrac;
       final double lo = (size - ls) / 2;
-buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
+      buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
           'width="${_f(ls)}" height="${_f(ls)}" '
           'preserveAspectRatio="xMidYMid meet" '
           'href="data:image/png;base64,$b64" '
           'xlink:href="data:image/png;base64,$b64"/>');
     }
 
+    if (pad > 0) buf.writeln('</g>');
     buf.writeln('</svg>');
     return buf.toString();
   }
@@ -203,30 +164,16 @@ buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
   // HELPERS DE MÓDULOS
   // ═══════════════════════════════════════════════════════════════
 
-  // ── Normal: rectángulos ─────────────────────────────────────────
-  static String _drawSquares(
-    QrImage qr,
-    int m,
-    double t,
-    String fill, {
-    double logoSizeFrac = 0.0,
-    double logoAuraModules = 0.0,
-  }) {
+  static String _drawSquares(QrImage qr, int m, double t, String fill,
+      {double logoSizeFrac = 0.0, double logoAuraModules = 0.0}) {
     final buf = StringBuffer();
     buf.writeln('<g fill="$fill">');
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         if (!qr.isDark(r, c)) continue;
         if (_isEye(r, c, m)) continue;
-        if (_isReservedCenterModule(
-          r,
-          c,
-          m,
-          logoSizeFrac: logoSizeFrac,
-          logoAuraModules: logoAuraModules,
-        )) {
-          continue;
-        }
+        if (_isReservedCenterModule(r, c, m,
+            logoSizeFrac: logoSizeFrac, logoAuraModules: logoAuraModules)) continue;
         final double x = c * t, y = r * t;
         buf.writeln('  <rect x="${_f(x)}" y="${_f(y)}" '
             'width="${_f(t)}" height="${_f(t)}"/>');
@@ -236,16 +183,8 @@ buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
     return buf.toString();
   }
 
-  // ── Liquid / Gusano: paths con stroke redondeado ────────────────
-    static String _drawLiquid(
-    QrImage qr,
-    int m,
-    double t,
-    String fill,
-    double size, {
-    double logoSizeFrac = 0.0,
-    double logoAuraModules = 0.0,
-  }) {
+  static String _drawLiquid(QrImage qr, int m, double t, String fill, double size,
+      {double logoSizeFrac = 0.0, double logoAuraModules = 0.0}) {
     final segs = StringBuffer();
 
     bool ok(int r, int c) {
@@ -368,7 +307,8 @@ buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
         final double h = ((r * 13 + c * 29) % 100) / 100.0;
         final double cx = c * t + t / 2;
         final double cy = r * t + t / 2;
-        final double rad = t * (0.35 + 0.15 * h);
+        // Max radius = 0.45t — keeps circles inside cell, prevents edge clipping
+        final double rad = t * (0.33 + 0.12 * h);
         buf.writeln('  <circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(rad)}"/>');
       }
     }
@@ -418,7 +358,8 @@ buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // OJOS
+  // OJOS — usa fill-rule="evenodd" para que el hueco sea transparente
+  // (igual que el painter PNG, que usa PathFillType.evenOdd)
   // ═══════════════════════════════════════════════════════════════
   static String _eye(double ox, double oy, double t,
       String extFill, String intFill,
@@ -427,52 +368,54 @@ buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
     final double s = 7 * t;
 
     if (isCircle) {
-      // Exterior: anillo circular
+      // Anillo exterior con hueco transparente (evenodd)
       final double r0 = s / 2;
       final double r1 = (s - 2 * t) / 2;
       final double cx = ox + s / 2, cy = oy + s / 2;
-      // Anillo = clip-path con evenodd
-      buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r0)}" '
-          'fill="$extFill"/>');
-      buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r1)}" '
-          'fill="white"/>');  // hueco
-      // Interior
+      // Dos subpaths en un <path> con evenodd → el interior queda transparente
+      buf.writeln('<path fill-rule="evenodd" fill="$extFill" d="'
+          'M ${_f(cx - r0)},${_f(cy)} '
+          'a ${_f(r0)},${_f(r0)} 0 1,0 ${_f(r0 * 2)},0 '
+          'a ${_f(r0)},${_f(r0)} 0 1,0 ${_f(-r0 * 2)},0 Z '
+          'M ${_f(cx - r1)},${_f(cy)} '
+          'a ${_f(r1)},${_f(r1)} 0 1,0 ${_f(r1 * 2)},0 '
+          'a ${_f(r1)},${_f(r1)} 0 1,0 ${_f(-r1 * 2)},0 Z"/>');
+      // Punto interior
       final double ri = (s - 4.2 * t) / 2;
-      buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(ri)}" '
-          'fill="$intFill"/>');
+      buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" '
+          'r="${_f(ri)}" fill="$intFill"/>');
 
     } else if (isDiamond) {
       final double cx = ox + 3.5 * t, cy = oy + 3.5 * t;
-      // Exterior rombo grande
-      buf.writeln('<path d="'
+      // Marco exterior rombo + hueco interior en un path evenodd
+      buf.writeln('<path fill-rule="evenodd" fill="$extFill" d="'
           'M ${_f(cx)},${_f(oy)} '
-          'L ${_f(ox + 7*t)},${_f(cy)} '
-          'L ${_f(cx)},${_f(oy + 7*t)} '
-          'L ${_f(ox)},${_f(cy)} Z" '
-          'fill="$extFill"/>');
-      // Hueco interior (blanco)
+          'L ${_f(ox + 7 * t)},${_f(cy)} '
+          'L ${_f(cx)},${_f(oy + 7 * t)} '
+          'L ${_f(ox)},${_f(cy)} Z '
+          'M ${_f(cx)},${_f(oy + 1.2 * t)} '
+          'L ${_f(ox + 5.8 * t)},${_f(cy)} '
+          'L ${_f(cx)},${_f(oy + 5.8 * t)} '
+          'L ${_f(ox + 1.2 * t)},${_f(cy)} Z"/>');
+      // Rombo interior
       buf.writeln('<path d="'
-          'M ${_f(cx)},${_f(oy + 1.2*t)} '
-          'L ${_f(ox + 5.8*t)},${_f(cy)} '
-          'L ${_f(cx)},${_f(oy + 5.8*t)} '
-          'L ${_f(ox + 1.2*t)},${_f(cy)} Z" '
-          'fill="white"/>');
-      // Interior
-      buf.writeln('<path d="'
-          'M ${_f(cx)},${_f(oy + 2.2*t)} '
-          'L ${_f(ox + 4.8*t)},${_f(cy)} '
-          'L ${_f(cx)},${_f(oy + 4.8*t)} '
-          'L ${_f(ox + 2.2*t)},${_f(cy)} Z" '
+          'M ${_f(cx)},${_f(oy + 2.2 * t)} '
+          'L ${_f(ox + 4.8 * t)},${_f(cy)} '
+          'L ${_f(cx)},${_f(oy + 4.8 * t)} '
+          'L ${_f(ox + 2.2 * t)},${_f(cy)} Z" '
           'fill="$intFill"/>');
 
     } else {
-      // Cuadrado (default)
-      buf.writeln('<rect x="${_f(ox)}" y="${_f(oy)}" '
-          'width="${_f(s)}" height="${_f(s)}" fill="$extFill"/>');
-      buf.writeln('<rect x="${_f(ox + t)}" y="${_f(oy + t)}" '
-          'width="${_f(s - 2*t)}" height="${_f(s - 2*t)}" fill="white"/>');
-      buf.writeln('<rect x="${_f(ox + 2.1*t)}" y="${_f(oy + 2.1*t)}" '
-          'width="${_f(s - 4.2*t)}" height="${_f(s - 4.2*t)}" fill="$intFill"/>');
+      // Cuadrado: borde exterior + hueco interior en un path evenodd
+      buf.writeln('<path fill-rule="evenodd" fill="$extFill" d="'
+          'M ${_f(ox)},${_f(oy)} '
+          'h ${_f(s)} v ${_f(s)} h ${_f(-s)} Z '
+          'M ${_f(ox + t)},${_f(oy + t)} '
+          'h ${_f(s - 2 * t)} v ${_f(s - 2 * t)} h ${_f(-(s - 2 * t))} Z"/>');
+      // Cuadrado interior (punto)
+      buf.writeln('<rect x="${_f(ox + 2.1 * t)}" y="${_f(oy + 2.1 * t)}" '
+          'width="${_f(s - 4.2 * t)}" height="${_f(s - 4.2 * t)}" '
+          'fill="$intFill"/>');
     }
 
     return buf.toString();
