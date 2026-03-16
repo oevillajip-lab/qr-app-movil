@@ -1624,34 +1624,51 @@ String _buildSvg() {
   );
 }
 
-  /// Renderiza PNG 1024×1024 directo con PictureRecorder — sin capturar widget de pantalla
+  /// Renderiza PNG directo con PictureRecorder.
+  /// • Fondo no-transparente → canvas ampliado con bordes redondeados (quiet zone real)
+  /// • Fondo transparente  → canvas exacto 1024 × 1024 sin relleno
   Future<Uint8List> _renderPng() async {
-    const double exportSize = 1024.0;
+    const double qrSize = 1024.0;
     final data = _getFinalData();
     final estilo = _tab == 0 ? _estilo : _estiloAvz;
     final isShape = estilo == "Formas (Máscara)";
-    final effLogo = _effectiveLogo(isShape) / 270.0 * exportSize;
+    final effLogo = _effectiveLogo(isShape) / 270.0 * qrSize;
     final isAdvStyle = _tab == 1 && (estilo == "Split Liquid (Mitades)" || isShape);
+
+    // ── Padding: agrandamos el canvas para el fondo ──────────────────
+    final bool hasBg = _bgMode != "Transparente";
+    final double pad = hasBg ? 80.0 : 0.0;          // quiet zone: ~8 % a cada lado
+    final double totalSize = qrSize + 2 * pad;
+    final double cornerRadius = pad * 0.9;           // bordes redondeados proporcionales
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // Fondo
-    if (_bgMode != "Transparente") {
+    // ── Fondo ────────────────────────────────────────────────────────
+    if (hasBg) {
       final Paint bgPaint = Paint();
       if (_bgMode == "Degradado") {
         bgPaint.shader = ui.Gradient.linear(
-          _gradOffset(_bgGradDir, true, exportSize),
-          _gradOffset(_bgGradDir, false, exportSize),
+          _gradOffset(_bgGradDir, true, totalSize),
+          _gradOffset(_bgGradDir, false, totalSize),
           [_bgC1, _bgC2],
         );
       } else {
         bgPaint.color = _bgMode == "Sólido (Color)" ? _bgC1 : Colors.white;
       }
-      canvas.drawRect(Rect.fromLTWH(0, 0, exportSize, exportSize), bgPaint);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, 0, totalSize, totalSize),
+          Radius.circular(cornerRadius),
+        ),
+        bgPaint,
+      );
     }
 
-    // QR
+    // ── QR (centrado dentro del canvas ampliado) ─────────────────────
+    canvas.save();
+    canvas.translate(pad, pad);
+
     if (isAdvStyle) {
       QrAdvancedPainter(
         data: data, estiloAvanzado: estilo,
@@ -1666,19 +1683,20 @@ String _buildSvg() {
         qrC1: _qrC1, qrC2: _qrC2,
         qrMode: _qrColorMode, qrDir: _qrGradDir,
         customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-      ).paint(canvas, const Size(exportSize, exportSize));
+      ).paint(canvas, const Size(qrSize, qrSize));
     } else {
       QrMasterPainter(
         data: data, estilo: estilo,
         logoImage: _logoImage, outerMask: _outerMask,
-        logoSize: effLogo, auraSize: _auraSize,
+        logoSize: isShape ? 0.0 : effLogo,
+        auraSize: _auraSize,
         qrC1: _qrC1, qrC2: _qrC2,
         qrMode: _qrColorMode, qrDir: _qrGradDir,
         customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
-      ).paint(canvas, const Size(exportSize, exportSize));
+      ).paint(canvas, const Size(qrSize, qrSize));
     }
 
-    // Logo encima si hay
+    // ── Logo encima (dentro del área QR) ────────────────────────────
     if (_logoBytes != null && !isShape) {
       final codec = await ui.instantiateImageCodec(
         _logoBytes!,
@@ -1688,13 +1706,15 @@ String _buildSvg() {
       final frame = await codec.getNextFrame();
       canvas.drawImage(
         frame.image,
-        Offset((exportSize - effLogo) / 2, (exportSize - effLogo) / 2),
+        Offset((qrSize - effLogo) / 2, (qrSize - effLogo) / 2),
         Paint()..isAntiAlias = true,
       );
     }
 
+    canvas.restore();
+
     final picture = recorder.endRecording();
-    final img = await picture.toImage(exportSize.toInt(), exportSize.toInt());
+    final img = await picture.toImage(totalSize.toInt(), totalSize.toInt());
     final bd = await img.toByteData(format: ui.ImageByteFormat.png);
     return bd!.buffer.asUint8List();
   }
@@ -2006,7 +2026,8 @@ class QrMasterPainter extends CustomPainter {
         }
       } else if (estilo.contains("Puntos")) {
         final double h = ((r * 13 + c * 29) % 100) / 100.0;
-        canvas.drawCircle(Offset(cx, cy), t * (0.35 + 0.15 * h), paint);
+        // Max radius = t * 0.45 → keeps circles inside their cell boundary (no clipping)
+        canvas.drawCircle(Offset(cx, cy), t * (0.33 + 0.12 * h), paint);
       } else if (estilo.contains("Diamantes")) {
         final double h = ((r * 17 + c * 31) % 100) / 100.0;
         final double sc = 0.65 + 0.22 * h; final double off = t * (1 - sc) / 2;
@@ -2114,8 +2135,9 @@ class QrAdvancedPainter extends CustomPainter {
     final excl = List.generate(m, (_) => List.filled(m, false));
     if (logoImage == null || outerMask == null || logoSize <= 0) return excl;
     final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
-    final canvasSize = m * t;
-    final lf = effLogo / canvasSize;
+    // Use 270.0 as fixed reference — same denominator as QrMasterPainter — so
+    // the exclusion zone is identical regardless of canvas size or painter used.
+    final lf = effLogo / 270.0;
     final ls = (1 - lf) / 2.0; final le = ls + lf;
     final base = List.generate(m, (_) => List.filled(m, false));
     for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
@@ -2557,7 +2579,7 @@ qrBox ??= Rect.fromCenter(
               final double h = (hashCell(rr, cc) % 100) / 100.0;
               canvas.drawCircle(
                 Offset(cx, cy),
-                decoStep * (0.35 + 0.15 * h),
+                decoStep * (0.33 + 0.12 * h),  // max 0.45t → no clipping
                 solidPaint,
               );
             } else if (isDiamonds) {
@@ -2765,7 +2787,7 @@ qrBox ??= Rect.fromCenter(
           }
         } else if (isDots) {
           final double h = ((r * 13 + c * 29) % 100) / 100.0;
-          canvas.drawCircle(Offset(cx, cy), t * (0.35 + 0.15 * h), sp);
+          canvas.drawCircle(Offset(cx, cy), t * (0.33 + 0.12 * h), sp);
         } else if (isDiamonds) {
           final double h = ((r * 17 + c * 31) % 100) / 100.0;
           final double sc = 0.65 + 0.22 * h; final double off = t * (1 - sc) / 2;
