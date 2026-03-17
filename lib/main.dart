@@ -929,16 +929,18 @@ Widget _shapeCard() => _card(
         ),
       ),
     ]),
-    const SizedBox(height: 10),
-    Row(children: [
-      const Text("Color QR", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-      const Spacer(),
-      _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
-      if (_qrColorMode != "Sólido (Un Color)") ...[
-        const SizedBox(width: 8),
-        _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
-      ],
-    ]),
+    if (_qrColorMode != "Automático (Logo)") ...[
+      const SizedBox(height: 10),
+      Row(children: [
+        const Text("Color QR", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const Spacer(),
+        _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
+        if (_qrColorMode == "Degradado Custom") ...[
+          const SizedBox(width: 8),
+          _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
+        ],
+      ]),
+    ],
     if (_qrColorMode == "Degradado Custom") ...[
       const SizedBox(height: 8),
       _dropdown(
@@ -1010,7 +1012,7 @@ Widget _shapeCard() => _card(
   ]));
 
   // ── Options bottom sheet ─────────────────────────────────────────
-  void _showOptionsSheet() {
+    void _showOptionsSheet() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1028,12 +1030,6 @@ Widget _shapeCard() => _card(
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
             Row(children: [
-              const Text("Color QR", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              _colorDot(_qrC1, (c) { setState(() => _qrC1 = c); Navigator.pop(context); }),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
               const Text("Modo color", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               const Spacer(),
               _dropdown(
@@ -1042,6 +1038,27 @@ Widget _shapeCard() => _card(
                 onChanged: (v) => setState(() => _qrColorMode = v!),
               ),
             ]),
+            if (_qrColorMode != "Automático (Logo)") ...[
+              const SizedBox(height: 12),
+              Row(children: [
+                const Text("Color QR", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                _colorDot(_qrC1, (c) { setState(() => _qrC1 = c); Navigator.pop(context); }),
+                if (_qrColorMode == "Degradado Custom") ...[
+                  const SizedBox(width: 8),
+                  _colorDot(_qrC2, (c) { setState(() => _qrC2 = c); Navigator.pop(context); }),
+                ],
+              ]),
+            ],
+            if (_qrColorMode == "Degradado Custom") ...[
+              const SizedBox(height: 12),
+              _dropdown(
+                value: _qrGradDir,
+                items: ["Vertical", "Horizontal", "Diagonal"],
+                onChanged: (v) => setState(() => _qrGradDir = v!),
+                label: "Dirección",
+              ),
+            ],
             const SizedBox(height: 16),
           ],
         ),
