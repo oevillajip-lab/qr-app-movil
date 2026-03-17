@@ -56,10 +56,10 @@ class QrSvgExporter {
 
     buf.writeln('<defs>');
     if (useGradient) {
-      buf.write(_linearGradientDef('qrGrad', qrC1, qrC2, qrDir));
+      buf.write(_linearGradientDef('qrGrad', qrC1, qrC2, qrDir, size));
     }
     if (bgMode == "Degradado") {
-      buf.write(_linearGradientDef('bgGrad', bgC1, bgC2, bgGradDir));
+      buf.write(_linearGradientDef('bgGrad', bgC1, bgC2, bgGradDir, totalSize));
     }
     buf.writeln('</defs>');
 
@@ -602,18 +602,25 @@ class QrSvgExporter {
 
   static String _f(double v) => v.toStringAsFixed(2);
 
-  static String _linearGradientDef(String id, Color c1, Color c2, String dir) {
-    double x1 = 0, y1 = 0, x2 = 0, y2 = 1;
+  static String _linearGradientDef(
+    String id,
+    Color c1,
+    Color c2,
+    String dir,
+    double span,
+  ) {
+    double x1 = 0, y1 = 0, x2 = 0, y2 = span;
+
     if (dir == 'Horizontal') {
-      x1 = 0; y1 = 0; x2 = 1; y2 = 0;
+      x1 = 0; y1 = 0; x2 = span; y2 = 0;
+    } else if (dir == 'Diagonal') {
+      x1 = 0; y1 = 0; x2 = span; y2 = span;
+    } else {
+      x1 = 0; y1 = 0; x2 = 0; y2 = span;
     }
-    if (dir == 'Diagonal') {
-      x1 = 0; y1 = 0; x2 = 1; y2 = 1;
-    }
-    if (dir == 'Vertical') {
-      x1 = 0; y1 = 0; x2 = 0; y2 = 1;
-    }
-    return '<linearGradient id="$id" x1="${_f(x1)}" y1="${_f(y1)}" '
+
+    return '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
+        'x1="${_f(x1)}" y1="${_f(y1)}" '
         'x2="${_f(x2)}" y2="${_f(y2)}">\n'
         '  <stop offset="0%" stop-color="${_hex(c1)}"/>\n'
         '  <stop offset="100%" stop-color="${_hex(c2)}"/>\n'
