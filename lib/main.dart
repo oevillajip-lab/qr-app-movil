@@ -604,7 +604,8 @@ String _splitDir = "Vertical";
   );
 
   // ── Style grid ───────────────────────────────────────────────────
-  Widget _styleGrid(List<String> styles, String selected, Function(String) onSelect) {
+
+Widget _styleGrid(List<String> styles, String selected, Function(String) onSelect) {
   final Color previewC2 =
       _qrColorMode == "Sólido (Un Color)" ? _qrC1 : _qrC2;
 
@@ -617,7 +618,6 @@ String _splitDir = "Vertical";
       itemBuilder: (ctx, i) {
         final style = styles[i];
         final sel = style == selected;
-
         return GestureDetector(
           onTap: () {
             HapticFeedback.selectionClick();
@@ -630,66 +630,88 @@ String _splitDir = "Vertical";
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: sel ? Colors.black : Colors.transparent,
-                width: 2.5,
-              ),
+                  color: sel ? Colors.black : Colors.transparent, width: 2.5),
               boxShadow: [
                 BoxShadow(
-                  color: sel
-                      ? Colors.black.withOpacity(0.15)
-                      : Colors.black.withOpacity(0.05),
-                  blurRadius: sel ? 12 : 4,
-                  offset: const Offset(0, 3),
-                ),
+                    color: sel
+                        ? Colors.black.withOpacity(0.15)
+                        : Colors.black.withOpacity(0.05),
+                    blurRadius: sel ? 12 : 4,
+                    offset: const Offset(0, 3)),
               ],
             ),
-            child: Column(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(14)),
-                    child: Container(
+            child: Column(children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(14)),
+                  child: Stack(alignment: Alignment.center, children: [
+                    Container(
+                      width: 96,
+                      height: 96,
                       color: const Color(0xFFF7F7F7),
                       child: CustomPaint(
                         painter: StylePreviewPainter(
                           style: style,
                           c1: _qrC1,
                           c2: previewC2,
+                          shapeSubStyle:
+                              style.contains("Formas") ? _mapSubStyle : null,
                         ),
-                        child: const SizedBox.expand(),
                       ),
                     ),
-                  ),
+                    if (_logoBytes != null && !style.contains("Formas"))
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: Image.memory(_logoBytes!, fit: BoxFit.contain),
+                      )
+                    else if (!style.contains("Formas"))
+                      const Text(
+                        "LOGO",
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black45,
+                        ),
+                      ),
+                  ]),
                 ),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  decoration: BoxDecoration(
-                    color: sel ? Colors.black : const Color(0xFFF8F8F8),
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(14),
-                    ),
-                  ),
-                  child: Text(
-                    _shortName(style),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: sel ? Colors.black : const Color(0xFFF8F8F8),
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(14)),
+                ),
+                child: Text(_shortName(style),
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: sel ? Colors.white : Colors.black54,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: sel ? Colors.white : Colors.black54,
+                        letterSpacing: -0.2)),
+              ),
+            ]),
           ),
         );
       },
     ),
   );
 }
+
+String _shortName(String s) {
+    if (s.contains("Gusano")) return "Liquid";
+    if (s.contains("Cuadrado")) return "Normal";
+    if (s.contains("Barras")) return "Barras";
+    if (s.contains("Puntos")) return "Círculos";
+    if (s.contains("Rombos")) return "Diamantes";
+    if (s.contains("Split")) return "Split";
+    if (s.contains("Formas")) return "Formas";
+    return s;
+  }
 
   // ── Sub-style row ────────────────────────────────────────────────
   Widget _subStyleRow(String current, Function(String) onSelect) =>
@@ -930,18 +952,16 @@ Widget _shapeCard() => _card(
         ),
       ),
     ]),
-    if (_qrColorMode != "Automático (Logo)") ...[
-      const SizedBox(height: 10),
-      Row(children: [
-        const Text("Color QR", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-        const Spacer(),
-        _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
-        if (_qrColorMode == "Degradado Custom") ...[
-          const SizedBox(width: 8),
-          _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
-        ],
-      ]),
-    ],
+    const SizedBox(height: 10),
+    Row(children: [
+      const Text("Color QR", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      const Spacer(),
+      _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
+      if (_qrColorMode != "Sólido (Un Color)") ...[
+        const SizedBox(width: 8),
+        _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
+      ],
+    ]),
     if (_qrColorMode == "Degradado Custom") ...[
       const SizedBox(height: 8),
       _dropdown(
@@ -1013,7 +1033,7 @@ Widget _shapeCard() => _card(
   ]));
 
   // ── Options bottom sheet ─────────────────────────────────────────
-    void _showOptionsSheet() {
+  void _showOptionsSheet() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1031,6 +1051,12 @@ Widget _shapeCard() => _card(
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
             Row(children: [
+              const Text("Color QR", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              _colorDot(_qrC1, (c) { setState(() => _qrC1 = c); Navigator.pop(context); }),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
               const Text("Modo color", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               const Spacer(),
               _dropdown(
@@ -1039,27 +1065,6 @@ Widget _shapeCard() => _card(
                 onChanged: (v) => setState(() => _qrColorMode = v!),
               ),
             ]),
-            if (_qrColorMode != "Automático (Logo)") ...[
-              const SizedBox(height: 12),
-              Row(children: [
-                const Text("Color QR", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                const Spacer(),
-                _colorDot(_qrC1, (c) { setState(() => _qrC1 = c); Navigator.pop(context); }),
-                if (_qrColorMode == "Degradado Custom") ...[
-                  const SizedBox(width: 8),
-                  _colorDot(_qrC2, (c) { setState(() => _qrC2 = c); Navigator.pop(context); }),
-                ],
-              ]),
-            ],
-            if (_qrColorMode == "Degradado Custom") ...[
-              const SizedBox(height: 12),
-              _dropdown(
-                value: _qrGradDir,
-                items: ["Vertical", "Horizontal", "Diagonal"],
-                onChanged: (v) => setState(() => _qrGradDir = v!),
-                label: "Dirección",
-              ),
-            ],
             const SizedBox(height: 16),
           ],
         ),
@@ -1114,40 +1119,41 @@ Widget _shapeCard() => _card(
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: Colors.black26, fontSize: 10)),
                             ])
-                          : FutureBuilder<Uint8List>(
-                              future: _renderPng(),
-                              builder: (context, snap) {
-                                if (snap.connectionState != ConnectionState.done ||
-                                    !snap.hasData) {
-                                  return const SizedBox(
-                                    width: 120,
-                                    height: 120,
-                                    child: Center(
-                                      child: SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.black26,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }
+                          
+: FutureBuilder<Uint8List>(
+    future: _renderPreviewPng(),
+    builder: (context, snap) {
+      if (snap.connectionState != ConnectionState.done ||
+          !snap.hasData) {
+        return const SizedBox(
+          width: 120,
+          height: 120,
+          child: Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.black26,
+              ),
+            ),
+          ),
+        );
+      }
 
-                                return Padding(
-                                  padding: const EdgeInsets.all(5),
-                                  child: Image.memory(
-                                    snap.data!,
-                                    width: 120,
-                                    height: 120,
-                                    fit: BoxFit.contain,
-                                    gaplessPlayback: true,
-                                    filterQuality: FilterQuality.high,
-                                  ),
-                                );
-                              },
-                            ),
+      return Padding(
+        padding: const EdgeInsets.all(5),
+        child: Image.memory(
+          snap.data!,
+          width: 120,
+          height: 120,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.high,
+        ),
+      );
+    },
+  ),
                 ),
               ),
             ),
@@ -1634,13 +1640,9 @@ String _buildSvg() {
     eyeInt: _eyeInt,
     mapSubStyle: _mapSubStyle,
     advSubStyle: _advSubStyle,
-    splitDir: _splitDir,
     logoBytes: isShape ? null : _logoBytes,
-    outerMask: isShape ? null : _outerMask,
-    shapeMask: isShape ? _shapeMask : null,
     logoSizeFrac: isShape ? 0.0 : (effLogo / 270.0),
     logoAuraModules: isShape ? 0.0 : _auraSize,
-    shapeGap: _shapeGap,
     size: 1024,
   );
 }
@@ -1734,13 +1736,85 @@ String _buildSvg() {
 
     canvas.restore();
 
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(totalSize.toInt(), totalSize.toInt());
-    final bd = await img.toByteData(format: ui.ImageByteFormat.png);
-    return bd!.buffer.asUint8List();
+
+  final picture = recorder.endRecording();
+  final img = await picture.toImage(totalSize.toInt(), totalSize.toInt());
+  final bd = await img.toByteData(format: ui.ImageByteFormat.png);
+  return bd!.buffer.asUint8List();
+}
+
+Future<Uint8List> _renderPreviewPng() async {
+  const double qrSize = 520.0;
+  final data = _getFinalData();
+  final estilo = _tab == 0 ? _estilo : _estiloAvz;
+  final isShape = estilo == "Formas (Máscara)";
+  final effLogo = _effectiveLogo(isShape) / 270.0 * qrSize;
+  final isAdvStyle = _tab == 1 && (estilo == "Split Liquid (Mitades)" || isShape);
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+
+  if (isAdvStyle) {
+    QrAdvancedPainter(
+      data: data,
+      estiloAvanzado: estilo,
+      mapSubStyle: _mapSubStyle,
+      advSubStyle: _advSubStyle,
+      splitDir: _splitDir,
+      logoImage: isShape ? null : _logoImage,
+      outerMask: isShape ? null : _outerMask,
+      shapeImage: _shapeImage,
+      shapeMask: _shapeMask,
+      logoSize: isShape ? 0.0 : effLogo,
+      auraSize: isShape ? 0.0 : _auraSize,
+      shapeGap: _shapeGap,
+      qrC1: _qrC1,
+      qrC2: _qrC2,
+      qrMode: _qrColorMode,
+      qrDir: _qrGradDir,
+      customEyes: _customEyes,
+      eyeExt: _eyeExt,
+      eyeInt: _eyeInt,
+    ).paint(canvas, const Size(qrSize, qrSize));
+  } else {
+    QrMasterPainter(
+      data: data,
+      estilo: estilo,
+      logoImage: _logoImage,
+      outerMask: _outerMask,
+      logoSize: isShape ? 0.0 : effLogo,
+      auraSize: _auraSize,
+      qrC1: _qrC1,
+      qrC2: _qrC2,
+      qrMode: _qrColorMode,
+      qrDir: _qrGradDir,
+      customEyes: _customEyes,
+      eyeExt: _eyeExt,
+      eyeInt: _eyeInt,
+    ).paint(canvas, const Size(qrSize, qrSize));
   }
 
-  /// Helper: offset para degradado según dirección
+  if (_logoBytes != null && !isShape) {
+    final codec = await ui.instantiateImageCodec(
+      _logoBytes!,
+      targetWidth: effLogo.toInt(),
+      targetHeight: effLogo.toInt(),
+    );
+    final frame = await codec.getNextFrame();
+    canvas.drawImage(
+      frame.image,
+      Offset((qrSize - effLogo) / 2, (qrSize - effLogo) / 2),
+      Paint()..isAntiAlias = true,
+    );
+  }
+
+  final picture = recorder.endRecording();
+  final img = await picture.toImage(qrSize.toInt(), qrSize.toInt());
+  final bd = await img.toByteData(format: ui.ImageByteFormat.png);
+  return bd!.buffer.asUint8List();
+}
+
+/// Helper: offset para degradado según dirección
   Offset _gradOffset(String dir, bool start, double size) {
     if (dir == "Horizontal") return start ? Offset.zero : Offset(size, 0);
     if (dir == "Diagonal")   return start ? Offset.zero : Offset(size, size);
@@ -1831,12 +1905,19 @@ enum EyeStyle { rect, circ, diamond }
 // ═══════════════════════════════════════════════════════════════════
 // SECCIÓN 9: PINTOR MINIATURAS
 // ═══════════════════════════════════════════════════════════════════
+
 class StylePreviewPainter extends CustomPainter {
   final String style;
   final Color c1, c2;
+  final String? shapeSubStyle;
   static const _demo = "https://qr.demo";
 
-  const StylePreviewPainter({required this.style, required this.c1, required this.c2});
+  const StylePreviewPainter({
+    required this.style,
+    required this.c1,
+    required this.c2,
+    this.shapeSubStyle,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1847,85 +1928,241 @@ class StylePreviewPainter extends CustomPainter {
     final paint = Paint()..isAntiAlias = true..color = c1;
     ui.Shader? grad;
     if (c1 != c2) {
-      grad = ui.Gradient.linear(Offset.zero, Offset(size.width, size.height), [c1, c2]);
+      grad = ui.Gradient.linear(
+        Offset.zero,
+        Offset(size.width, size.height),
+        [c1, c2],
+      );
       paint.shader = grad;
     }
-        if (style.contains("Formas")) {
-      final Paint p = Paint()..isAntiAlias = true;
+
+    if (style.contains("Formas")) {
+      final String formStyle = shapeSubStyle ?? "Liquid Pro (Gusano)";
+      final Paint frameFill = Paint()
+        ..isAntiAlias = true
+        ..color = const Color(0xFFF3F3F6);
+      final Paint frameStroke = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.035
+        ..color = const Color(0xFFE2E2E8);
+
+      final Rect diamondBounds = Rect.fromLTWH(
+        size.width * 0.14,
+        size.height * 0.14,
+        size.width * 0.72,
+        size.height * 0.72,
+      );
+      final Offset dc = diamondBounds.center;
+      final Path diamond = Path()
+        ..moveTo(dc.dx, diamondBounds.top)
+        ..lineTo(diamondBounds.right, dc.dy)
+        ..lineTo(dc.dx, diamondBounds.bottom)
+        ..lineTo(diamondBounds.left, dc.dy)
+        ..close();
+
+      canvas.drawPath(diamond, frameFill);
+      canvas.save();
+      canvas.clipPath(diamond);
+
+      final double qrSide = size.width * 0.56;
+      final double qx = (size.width - qrSide) / 2;
+      final double qy = (size.height - qrSide) / 2;
+      final double qt = qrSide / m;
+
+      bool isEye(int r, int c) =>
+          (r < 7 && c < 7) ||
+          (r < 7 && c >= m - 7) ||
+          (r >= m - 7 && c < 7);
+
+      bool darkOk(int r, int c) {
+        if (r < 0 || r >= m || c < 0 || c >= m) return false;
+        if (!qr.isDark(r, c)) return false;
+        if (isEye(r, c)) return false;
+        return true;
+      }
+
+      final Path liquidPath = Path();
+      final Paint liquidPen = Paint()
+        ..isAntiAlias = true
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = qt
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
       if (grad != null) {
-        p.shader = grad;
+        liquidPen.shader = grad;
       } else {
-        p.color = c1;
+        liquidPen.color = c1;
       }
 
-      bool insideDiamond(double px, double py) {
-        final dx = ((px - size.width / 2).abs()) / (size.width * 0.38);
-        final dy = ((py - size.height / 2).abs()) / (size.height * 0.38);
-        return (dx + dy) <= 1.0;
-      }
-
-      final double rr = t * 0.28;
+      final bool isLiquid =
+          formStyle.contains("Gusano") || formStyle.contains("Liquid");
+      final bool isBars = formStyle.contains("Barras");
+      final bool isDots = formStyle.contains("Puntos");
+      final bool isDiamonds =
+          formStyle.contains("Rombos") || formStyle.contains("Diamantes");
 
       for (int r = 0; r < m; r++) {
         for (int c = 0; c < m; c++) {
-          if (!qr.isDark(r, c)) continue;
+          if (!darkOk(r, c)) continue;
 
-          final double x = c * t;
-          final double y = r * t;
-          final double cx = x + t / 2;
-          final double cy = y + t / 2;
+          final double x = qx + c * qt;
+          final double y = qy + r * qt;
+          final double cx = x + qt / 2;
+          final double cy = y + qt / 2;
 
-          if (!insideDiamond(cx, cy)) continue;
-
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              Rect.fromLTWH(
-                x + t * 0.10,
-                y + t * 0.10,
-                t * 0.80,
-                t * 0.80,
+          if (isLiquid) {
+            liquidPath.moveTo(cx, cy);
+            liquidPath.lineTo(cx, cy);
+            if (darkOk(r, c + 1)) {
+              liquidPath.moveTo(cx, cy);
+              liquidPath.lineTo(cx + qt, cy);
+            }
+            if (darkOk(r + 1, c)) {
+              liquidPath.moveTo(cx, cy);
+              liquidPath.lineTo(cx, cy + qt);
+            }
+          } else if (isBars) {
+            if (r == 0 || !darkOk(r - 1, c)) {
+              int er = r;
+              while (er + 1 < m && darkOk(er + 1, c)) {
+                er++;
+              }
+              final Paint p2 = Paint()..isAntiAlias = true;
+              if (grad != null) {
+                p2.shader = grad;
+              } else {
+                p2.color = c1;
+              }
+              canvas.drawRRect(
+                RRect.fromRectAndRadius(
+                  Rect.fromLTWH(
+                    x + qt * 0.10,
+                    y,
+                    qt * 0.80,
+                    (er - r + 1) * qt,
+                  ),
+                  Radius.circular(qt * 0.38),
+                ),
+                p2,
+              );
+            }
+          } else if (isDots) {
+            final double h = ((r * 13 + c * 29) % 100) / 100.0;
+            canvas.drawCircle(
+              Offset(cx, cy),
+              qt * (0.31 + 0.11 * h),
+              paint,
+            );
+          } else if (isDiamonds) {
+            final double h = ((r * 17 + c * 31) % 100) / 100.0;
+            final double sc = 0.70 + 0.18 * h;
+            final double off = qt * (1 - sc) / 2;
+            canvas.drawPath(
+              Path()
+                ..moveTo(cx, y + off)
+                ..lineTo(x + qt - off, cy)
+                ..lineTo(cx, y + qt - off)
+                ..lineTo(x + off, cy)
+                ..close(),
+              paint,
+            );
+          } else {
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTWH(
+                  x + qt * 0.10,
+                  y + qt * 0.10,
+                  qt * 0.80,
+                  qt * 0.80,
+                ),
+                Radius.circular(qt * 0.16),
               ),
-              Radius.circular(rr),
-            ),
-            p,
+              paint,
+            );
+          }
+        }
+      }
+
+      if (isLiquid) {
+        canvas.drawPath(liquidPath, liquidPen);
+      }
+
+      final Paint pE = Paint()..isAntiAlias = true;
+      final Paint pI = Paint()..isAntiAlias = true;
+      if (grad != null) {
+        pE.shader = grad;
+        pI.shader = grad;
+      } else {
+        pE.color = c1;
+        pI.color = c1;
+      }
+
+      EyeStyle es = EyeStyle.rect;
+      if (isDots) es = EyeStyle.circ;
+      if (isDiamonds) es = EyeStyle.diamond;
+
+      void eye(double x, double y) {
+        final s = 7 * qt;
+        if (es == EyeStyle.circ) {
+          canvas.drawPath(
+            Path()
+              ..addOval(Rect.fromLTWH(x, y, s, s))
+              ..addOval(Rect.fromLTWH(x + qt, y + qt, s - 2 * qt, s - 2 * qt))
+              ..fillType = PathFillType.evenOdd,
+            pE,
+          );
+          canvas.drawOval(
+            Rect.fromLTWH(x + 2.1 * qt, y + 2.1 * qt, s - 4.2 * qt, s - 4.2 * qt),
+            pI,
+          );
+        } else if (es == EyeStyle.diamond) {
+          final cx = x + 3.5 * qt;
+          final cy = y + 3.5 * qt;
+          canvas.drawPath(
+            Path()
+              ..moveTo(cx, y)
+              ..lineTo(x + 7 * qt, cy)
+              ..lineTo(cx, y + 7 * qt)
+              ..lineTo(x, cy)
+              ..moveTo(cx, y + 1.2 * qt)
+              ..lineTo(x + 5.8 * qt, cy)
+              ..lineTo(cx, y + 5.8 * qt)
+              ..lineTo(x + 1.2 * qt, cy)
+              ..fillType = PathFillType.evenOdd,
+            pE,
+          );
+          canvas.drawPath(
+            Path()
+              ..moveTo(cx, y + 2.2 * qt)
+              ..lineTo(x + 4.8 * qt, cy)
+              ..lineTo(cx, y + 4.8 * qt)
+              ..lineTo(x + 2.2 * qt, cy)
+              ..close(),
+            pI,
+          );
+        } else {
+          canvas.drawPath(
+            Path()
+              ..addRect(Rect.fromLTWH(x, y, s, s))
+              ..addRect(Rect.fromLTWH(x + qt, y + qt, s - 2 * qt, s - 2 * qt))
+              ..fillType = PathFillType.evenOdd,
+            pE,
+          );
+          canvas.drawRect(
+            Rect.fromLTWH(x + 2.1 * qt, y + 2.1 * qt, s - 4.2 * qt, s - 4.2 * qt),
+            pI,
           );
         }
       }
 
-      void miniEye(double cx, double cy, double s) {
-        final Paint pOuter = Paint()..isAntiAlias = true;
-        final Paint pInner = Paint()..isAntiAlias = true;
+      eye(qx, qy);
+      eye(qx + qrSide - 7 * qt, qy);
+      eye(qx, qy + qrSide - 7 * qt);
 
-        if (grad != null) {
-          pOuter.shader = grad;
-          pInner.shader = grad;
-        } else {
-          pOuter.color = c1;
-          pInner.color = c1;
-        }
-
-        final Rect outer =
-            Rect.fromCenter(center: Offset(cx, cy), width: s, height: s);
-        final Rect hole =
-            Rect.fromCenter(center: Offset(cx, cy), width: s * 0.58, height: s * 0.58);
-        final Rect inner =
-            Rect.fromCenter(center: Offset(cx, cy), width: s * 0.28, height: s * 0.28);
-
-        canvas.drawPath(
-          Path()
-            ..addRect(outer)
-            ..addRect(hole)
-            ..fillType = PathFillType.evenOdd,
-          pOuter,
-        );
-
-        canvas.drawRect(inner, pInner);
-      }
-
-      final double es = size.width * 0.16;
-      miniEye(size.width * 0.34, size.height * 0.34, es);
-      miniEye(size.width * 0.66, size.height * 0.34, es);
-      miniEye(size.width * 0.34, size.height * 0.66, es);
+      canvas.restore();
+      canvas.drawPath(diamond, frameStroke);
       return;
     }
 
@@ -1933,7 +2170,8 @@ class StylePreviewPainter extends CustomPainter {
     const s0 = (1.0 - frac) / 2.0;
     const s1 = s0 + frac;
     bool inCenter(int r, int c) {
-      final nx = (c + 0.5) / m; final ny = (r + 0.5) / m;
+      final nx = (c + 0.5) / m;
+      final ny = (r + 0.5) / m;
       return nx >= s0 && nx <= s1 && ny >= s0 && ny <= s1;
     }
     bool isEye(int r, int c) => (r < 7 && c < 7) || (r < 7 && c >= m - 7) || (r >= m - 7 && c < 7);
@@ -1952,21 +2190,6 @@ class StylePreviewPainter extends CustomPainter {
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         final double x = c * t, y = r * t, cx = x + t / 2, cy = y + t / 2;
-
-        if (style.contains("Formas")) {
-          if (!qr.isDark(r, c) || isEye(r, c)) continue;
-          final double nx = (c + 0.5) / m - 0.5;
-          final double ny = (r + 0.5) / m - 0.5;
-          final double angle = math.atan2(nx, -ny);
-          final double dist = math.sqrt(nx * nx + ny * ny);
-          final double section = (angle / (2 * math.pi / 5)).floor() * (2 * math.pi / 5);
-          final double relAngle = angle - section - math.pi / 5;
-          final double limitR = 0.47 * math.cos(math.pi / 5) /
-              math.cos(relAngle.clamp(-math.pi / 5, math.pi / 5));
-          if (dist > limitR) continue;
-          canvas.drawCircle(Offset(cx, cy), t * 0.38, paint);
-          continue;
-        }
 
         if (!ok(r, c)) continue;
         if (style.contains("Gusano")) {
@@ -2028,8 +2251,13 @@ class StylePreviewPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(StylePreviewPainter o) => o.c1 != c1 || o.c2 != c2 || o.style != style;
+  bool shouldRepaint(StylePreviewPainter o) =>
+      o.c1 != c1 ||
+      o.c2 != c2 ||
+      o.style != style ||
+      o.shapeSubStyle != shapeSubStyle;
 }
+
 
 // ═══════════════════════════════════════════════════════════════════
 // SECCIÓN 10: PINTOR QR BÁSICO
