@@ -1637,8 +1637,10 @@ String _buildSvg() {
     splitDir: _splitDir,
     logoBytes: isShape ? null : _logoBytes,
     outerMask: isShape ? null : _outerMask,
+    shapeMask: isShape ? _shapeMask : null,
     logoSizeFrac: isShape ? 0.0 : (effLogo / 270.0),
     logoAuraModules: isShape ? 0.0 : _auraSize,
+    shapeGap: _shapeGap,
     size: 1024,
   );
 }
