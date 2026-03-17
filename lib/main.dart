@@ -605,56 +605,61 @@ String _splitDir = "Vertical";
 
   // ── Style grid ───────────────────────────────────────────────────
   Widget _styleGrid(List<String> styles, String selected, Function(String) onSelect) {
-    return SizedBox(
-      height: 122,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: styles.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (ctx, i) {
-          final style = styles[i];
-          final sel = style == selected;
-          return GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              onSelect(style);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: 100,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: sel ? Colors.black : Colors.transparent, width: 2.5),
-                boxShadow: [
-                  BoxShadow(
-                      color: sel
-                          ? Colors.black.withOpacity(0.15)
-                          : Colors.black.withOpacity(0.05),
-                      blurRadius: sel ? 12 : 4,
-                      offset: const Offset(0, 3)),
-                ],
+  final Color previewC2 =
+      _qrColorMode == "Sólido (Un Color)" ? _qrC1 : _qrC2;
+
+  return SizedBox(
+    height: 122,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: styles.length,
+      separatorBuilder: (_, __) => const SizedBox(width: 10),
+      itemBuilder: (ctx, i) {
+        final style = styles[i];
+        final sel = style == selected;
+
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onSelect(style);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 100,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: sel ? Colors.black : Colors.transparent,
+                width: 2.5,
               ),
-              child: Column(children: [
+              boxShadow: [
+                BoxShadow(
+                  color: sel
+                      ? Colors.black.withOpacity(0.15)
+                      : Colors.black.withOpacity(0.05),
+                  blurRadius: sel ? 12 : 4,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
                 Expanded(
                   child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                    child: Stack(alignment: Alignment.center, children: [
-                      SizedBox(
-                        width: 96, height: 96,
-                        child: CustomPaint(
-                            painter: StylePreviewPainter(
-                                style: style, c1: _qrC1, c2: _qrC2)),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(14)),
+                    child: Container(
+                      color: const Color(0xFFF7F7F7),
+                      child: CustomPaint(
+                        painter: StylePreviewPainter(
+                          style: style,
+                          c1: _qrC1,
+                          c2: previewC2,
+                        ),
+                        child: const SizedBox.expand(),
                       ),
-                      if (_logoBytes != null && !style.contains("Formas"))
-                        SizedBox(width: 22, height: 22,
-                            child: Image.memory(_logoBytes!, fit: BoxFit.contain))
-                      else if (!style.contains("Formas"))
-                        const Text("LOGO",
-                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900,
-                                color: Colors.black45)),
-                    ]),
+                    ),
                   ),
                 ),
                 Container(
@@ -662,33 +667,29 @@ String _splitDir = "Vertical";
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   decoration: BoxDecoration(
                     color: sel ? Colors.black : const Color(0xFFF8F8F8),
-                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(14),
+                    ),
                   ),
-                  child: Text(_shortName(style),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 10, fontWeight: FontWeight.w700,
-                          color: sel ? Colors.white : Colors.black54,
-                          letterSpacing: -0.2)),
+                  child: Text(
+                    _shortName(style),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: sel ? Colors.white : Colors.black54,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
                 ),
-              ]),
+              ],
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  String _shortName(String s) {
-    if (s.contains("Gusano")) return "Liquid";
-    if (s.contains("Cuadrado")) return "Normal";
-    if (s.contains("Barras")) return "Barras";
-    if (s.contains("Puntos")) return "Círculos";
-    if (s.contains("Rombos")) return "Diamantes";
-    if (s.contains("Split")) return "Split";
-    if (s.contains("Formas")) return "Formas";
-    return s;
-  }
+          ),
+        );
+      },
+    ),
+  );
+}
 
   // ── Sub-style row ────────────────────────────────────────────────
   Widget _subStyleRow(String current, Function(String) onSelect) =>
@@ -1113,41 +1114,40 @@ Widget _shapeCard() => _card(
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: Colors.black26, fontSize: 10)),
                             ])
-                          : Stack(alignment: Alignment.center, children: [
-                              CustomPaint(
-                                size: const Size(120, 120),
-                                painter: isAdvStyle
-                                    ? QrAdvancedPainter(
-                                        data: data, estiloAvanzado: estilo,
-                                        mapSubStyle: _mapSubStyle, advSubStyle: _advSubStyle,
-                                        splitDir: _splitDir,
-                                        logoImage: isShape ? null : _logoImage,
-                                        outerMask: isShape ? null : _outerMask,
-                                        shapeImage: _shapeImage, shapeMask: _shapeMask,
-                                        logoSize: isShape ? 0.0 : effLogo,
-                                        auraSize: isShape ? 0.0 : _auraSize,
-                                        shapeGap: _shapeGap,
-                                        qrC1: _qrC1, qrC2: _qrC2,
-                                        qrMode: _qrColorMode, qrDir: _qrGradDir,
-                                        customEyes: _customEyes,
-                                        eyeExt: _eyeExt, eyeInt: _eyeInt,
-                                      )
-                                    : QrMasterPainter(
-                                        data: data, estilo: estilo,
-                                        logoImage: _logoImage, outerMask: _outerMask,
-                                        logoSize: effLogo, auraSize: _auraSize,
-                                        qrC1: _qrC1, qrC2: _qrC2,
-                                        qrMode: _qrColorMode, qrDir: _qrGradDir,
-                                        customEyes: _customEyes,
-                                        eyeExt: _eyeExt, eyeInt: _eyeInt,
+                          : FutureBuilder<Uint8List>(
+                              future: _renderPng(),
+                              builder: (context, snap) {
+                                if (snap.connectionState != ConnectionState.done ||
+                                    !snap.hasData) {
+                                  return const SizedBox(
+                                    width: 120,
+                                    height: 120,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.black26,
+                                        ),
                                       ),
-                              ),
-                              if (_logoBytes != null && !isShape)
-                                SizedBox(
-                                  width: effLogo * 120 / 270,
-                                  height: effLogo * 120 / 270,
-                                  child: Image.memory(_logoBytes!, fit: BoxFit.contain)),
-                            ]),
+                                    ),
+                                  );
+                                }
+
+                                return Padding(
+                                  padding: const EdgeInsets.all(5),
+                                  child: Image.memory(
+                                    snap.data!,
+                                    width: 120,
+                                    height: 120,
+                                    fit: BoxFit.contain,
+                                    gaplessPlayback: true,
+                                    filterQuality: FilterQuality.high,
+                                  ),
+                                );
+                              },
+                            ),
                 ),
               ),
             ),
@@ -1850,6 +1850,85 @@ class StylePreviewPainter extends CustomPainter {
       grad = ui.Gradient.linear(Offset.zero, Offset(size.width, size.height), [c1, c2]);
       paint.shader = grad;
     }
+        if (style.contains("Formas")) {
+      final Paint p = Paint()..isAntiAlias = true;
+      if (grad != null) {
+        p.shader = grad;
+      } else {
+        p.color = c1;
+      }
+
+      bool insideDiamond(double px, double py) {
+        final dx = ((px - size.width / 2).abs()) / (size.width * 0.38);
+        final dy = ((py - size.height / 2).abs()) / (size.height * 0.38);
+        return (dx + dy) <= 1.0;
+      }
+
+      final double rr = t * 0.28;
+
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!qr.isDark(r, c)) continue;
+
+          final double x = c * t;
+          final double y = r * t;
+          final double cx = x + t / 2;
+          final double cy = y + t / 2;
+
+          if (!insideDiamond(cx, cy)) continue;
+
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(
+                x + t * 0.10,
+                y + t * 0.10,
+                t * 0.80,
+                t * 0.80,
+              ),
+              Radius.circular(rr),
+            ),
+            p,
+          );
+        }
+      }
+
+      void miniEye(double cx, double cy, double s) {
+        final Paint pOuter = Paint()..isAntiAlias = true;
+        final Paint pInner = Paint()..isAntiAlias = true;
+
+        if (grad != null) {
+          pOuter.shader = grad;
+          pInner.shader = grad;
+        } else {
+          pOuter.color = c1;
+          pInner.color = c1;
+        }
+
+        final Rect outer =
+            Rect.fromCenter(center: Offset(cx, cy), width: s, height: s);
+        final Rect hole =
+            Rect.fromCenter(center: Offset(cx, cy), width: s * 0.58, height: s * 0.58);
+        final Rect inner =
+            Rect.fromCenter(center: Offset(cx, cy), width: s * 0.28, height: s * 0.28);
+
+        canvas.drawPath(
+          Path()
+            ..addRect(outer)
+            ..addRect(hole)
+            ..fillType = PathFillType.evenOdd,
+          pOuter,
+        );
+
+        canvas.drawRect(inner, pInner);
+      }
+
+      final double es = size.width * 0.16;
+      miniEye(size.width * 0.34, size.height * 0.34, es);
+      miniEye(size.width * 0.66, size.height * 0.34, es);
+      miniEye(size.width * 0.34, size.height * 0.66, es);
+      return;
+    }
+
     const frac = 0.30;
     const s0 = (1.0 - frac) / 2.0;
     const s1 = s0 + frac;
