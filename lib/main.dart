@@ -167,8 +167,10 @@ class _MainScreenState extends State<MainScreen>
   final _c4 = TextEditingController();
   final _c5 = TextEditingController();
 
-  int _tab = 1; // siempre avanzado — nuevo UI usa _estiloAvz siempre
-  int _configTab = 0; // 0=Estilo 1=Color 2=Logo 3=Fondo
+  final int _tab = 1; // fijo: funciones de render siempre usan _estiloAvz
+  int _bottomTab = 0; // 0=Crear QR, 1=Historial, 2=Config
+  int _step = 0;      // 0=Tipo, 1=Contenido, 2=Personalizar
+  int _personTab = 0; // 0=Estilo, 1=Color, 2=Logo (o Fondo si isShape), 3=Fondo
   String _qrType = "Sitio Web (URL)";
   String _estilo = "Liquid Pro (Gusano)";
   String _estiloAvz = "Split Liquid (Mitades)";
@@ -399,60 +401,427 @@ String _splitDir = "Vertical";
       default: return _c1.text;
     }
   }
-
   // ═══════════════════════════════════════════════════════════════════
-  // UI PRINCIPAL — REDISEÑO FLAT MINIMALISTA
+  // UI PRINCIPAL — MULTI-PANTALLA
   // ═══════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final data = _getFinalData();
-    final isEmpty = data.isEmpty;
-    final isShape = _estiloAvz == "Formas (Máscara)";
-    final effLogo = _effectiveLogo(isShape);
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F0F0),
+      backgroundColor: const Color(0xFFF2F2F2),
       body: SafeArea(
         child: Column(
           children: [
-            _buildTopBar(),
-            _buildQrHero(data, isEmpty, isShape),
-            _buildTypeChips(),
-            _buildInputStrip(),
-            _buildConfigTabs(),
-            Expanded(child: _buildConfigPanel(effLogo, isShape)),
-            _buildBottomBar(isEmpty),
+            Expanded(child: _buildCurrentScreen()),
+            _buildBottomNav(),
           ],
         ),
       ),
     );
   }
 
-  // ── Top bar ──────────────────────────────────────────────────────
-  Widget _buildTopBar() => Container(
-    color: Colors.white,
-    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-    child: Row(
-      children: [
-        Container(
-          width: 30, height: 30,
-          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(7)),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(7),
-            child: Image.asset('assets/app_icon.png', fit: BoxFit.cover,
-                errorBuilder: (c, e, s) =>
-                    const Icon(Icons.qr_code_2, color: Colors.white, size: 18)),
-          ),
-        ),
-        const SizedBox(width: 10),
-        const Text("QR+Logo",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, letterSpacing: -0.5)),
-      ],
+  // ── Bottom Nav ────────────────────────────────────────────────────
+  Widget _buildBottomNav() => Container(
+    height: 60,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(top: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
     ),
+    child: Row(children: [
+      _navItem(Icons.add_circle_outline, Icons.add_circle, "Crear QR", 0),
+      _navItem(Icons.history_outlined, Icons.history, "Historial", 1),
+      _navItem(Icons.settings_outlined, Icons.settings, "Config.", 2),
+    ]),
   );
 
-  // ── QR Hero ──────────────────────────────────────────────────────
-  Widget _buildQrHero(String data, bool isEmpty, bool isShape) {
+  Widget _navItem(IconData outIcon, IconData fillIcon, String label, int index) {
+    final sel = _bottomTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _bottomTab = index;
+            if (index == 0) _step = 0;
+          });
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(sel ? fillIcon : outIcon, size: 22,
+              color: sel ? Colors.black : const Color(0xFFCCCCCC)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w600,
+            color: sel ? Colors.black : const Color(0xFFCCCCCC),
+          )),
+        ]),
+      ),
+    );
+  }
+
+  // ── Router ────────────────────────────────────────────────────────
+  Widget _buildCurrentScreen() {
+    if (_bottomTab == 1) return _buildHistorialScreen();
+    if (_bottomTab == 2) return _buildConfigScreen();
+    switch (_step) {
+      case 1: return _buildContenidoScreen();
+      case 2: return _buildPersonalizarScreen();
+      default: return _buildTipoScreen();
+    }
+  }
+
+  // ── Historial ─────────────────────────────────────────────────────
+  Widget _buildHistorialScreen() => Column(children: [
+    _buildAppBar("Historial"),
+    Expanded(child: Center(child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 64, height: 64,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F2), borderRadius: BorderRadius.circular(16)),
+          child: const Icon(Icons.history, size: 32, color: Color(0xFFCCCCCC)),
+        ),
+        const SizedBox(height: 12),
+        const Text("Sin historial aún", style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFAAAAAA))),
+        const SizedBox(height: 4),
+        const Text("Tus QRs guardados aparecerán aquí",
+            style: TextStyle(fontSize: 12, color: Color(0xFFCCCCCC))),
+      ],
+    ))),
+  ]);
+
+  // ── Configuracion ─────────────────────────────────────────────────
+  Widget _buildConfigScreen() => Column(children: [
+    _buildAppBar("Configuración"),
+    Expanded(child: Center(child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 64, height: 64,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F2), borderRadius: BorderRadius.circular(16)),
+          child: const Icon(Icons.settings, size: 32, color: Color(0xFFCCCCCC)),
+        ),
+        const SizedBox(height: 12),
+        const Text("Próximamente", style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFAAAAAA))),
+      ],
+    ))),
+  ]);
+
+  // ══════════════════════════════════════════════════════════════════
+  // PASO 1 — ELEGIR TIPO
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildTipoScreen() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _buildAppBar("Crear QR"),
+      _buildStepBar(1),
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("¿Qué tipo de QR?", style: TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF111111))),
+              const SizedBox(height: 4),
+              const Text("Elegí el contenido que va a tener",
+                  style: TextStyle(fontSize: 13, color: Color(0xFFAAAAAA))),
+              const SizedBox(height: 20),
+              _tipoTile("Sitio Web (URL)", Icons.language_outlined, fullWidth: true),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: _tipoTile("WhatsApp", Icons.chat_bubble_outline)),
+                const SizedBox(width: 10),
+                Expanded(child: _tipoTile("Red WiFi", Icons.wifi_outlined)),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: _tipoTile("VCard (Contacto)", Icons.person_outline)),
+                const SizedBox(width: 10),
+                Expanded(child: _tipoTile("Teléfono", Icons.phone_outlined)),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: _tipoTile("E-mail", Icons.email_outlined)),
+                const SizedBox(width: 10),
+                Expanded(child: _tipoTile("SMS (Mensaje)", Icons.sms_outlined)),
+              ]),
+              const SizedBox(height: 10),
+              _tipoTile("Texto Libre", Icons.text_fields_outlined, fullWidth: true),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _tipoTile(String type, IconData icon, {bool fullWidth = false}) {
+    const shortLabels = {
+      "Sitio Web (URL)": "URL / Enlace",
+      "WhatsApp": "WhatsApp",
+      "Red WiFi": "Red Wi-Fi",
+      "VCard (Contacto)": "Contacto vCard",
+      "Teléfono": "Teléfono",
+      "E-mail": "E-mail",
+      "SMS (Mensaje)": "SMS",
+      "Texto Libre": "Texto Libre",
+    };
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() { _qrType = type; _step = 1; });
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(
+            horizontal: 16, vertical: fullWidth ? 16 : 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFEEEEEE)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F2F2),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 18, color: const Color(0xFF333333)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(shortLabels[type]!, style: const TextStyle(
+            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF222222)))),
+          const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFFCCCCCC)),
+        ]),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // PASO 2 — INGRESAR CONTENIDO
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildContenidoScreen() {
+    final isFormas = _estiloAvz == "Formas (Máscara)";
+    final canContinue = _getFinalData().isNotEmpty;
+    return Column(children: [
+      _buildAppBar("Ingresar contenido",
+          showBack: true, onBack: () => setState(() => _step = 0)),
+      _buildStepBar(2),
+      // Type chips
+      Container(
+        color: Colors.white,
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
+        child: _buildTypeChips(),
+      ),
+      // Form area
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _buildInputs(),
+            if (isFormas) ...[
+              const SizedBox(height: 20),
+              _buildShapeUploadInline(),
+            ],
+          ]),
+        ),
+      ),
+      // Next
+      Container(
+        color: Colors.white,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+        child: _bigBtn(
+          "Personalizar QR",
+          Icons.tune_rounded,
+          canContinue ? () {
+            HapticFeedback.lightImpact();
+            setState(() => _step = 2);
+          } : null,
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildTypeChips() {
+    const types = [
+      "Sitio Web (URL)", "WhatsApp", "Red WiFi", "VCard (Contacto)",
+      "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre",
+    ];
+    const labels = {
+      "Sitio Web (URL)": "URL",
+      "WhatsApp": "WhatsApp",
+      "Red WiFi": "Wi-Fi",
+      "VCard (Contacto)": "Contacto",
+      "Teléfono": "Teléfono",
+      "E-mail": "E-mail",
+      "SMS (Mensaje)": "SMS",
+      "Texto Libre": "Texto",
+    };
+    return SizedBox(
+      height: 32,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: types.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 7),
+        itemBuilder: (_, i) {
+          final t = types[i];
+          final sel = t == _qrType;
+          return GestureDetector(
+            onTap: () { HapticFeedback.selectionClick(); setState(() => _qrType = t); },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+              decoration: BoxDecoration(
+                color: sel ? const Color(0xFF111111) : const Color(0xFFF2F2F2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(labels[t]!, style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w600,
+                color: sel ? Colors.white : const Color(0xFF888888),
+              )),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildShapeUploadInline() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _label("FIGURA / FORMA DEL QR"),
+      GestureDetector(
+        onTap: () async {
+          HapticFeedback.lightImpact();
+          final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+          if (img != null) await _processShape(File(img.path));
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _shapeBytes != null
+                  ? const Color(0xFF111111) : const Color(0xFFE0E0E0),
+              width: _shapeBytes != null ? 1.5 : 1,
+            ),
+          ),
+          child: Row(children: [
+            Container(
+              width: 46, height: 46,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2F2F2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: _shapeBytes != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.memory(_shapeBytes!, fit: BoxFit.cover))
+                  : const Icon(Icons.format_shapes, size: 22, color: Color(0xFF888888)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _shapeBytes != null ? "✅ Forma cargada" : "Cargar figura o forma",
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF222222)),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _shapeBytes != null
+                      ? "Toca para cambiar"
+                      : "PNG transparente ideal · JPG también sirve",
+                  style: const TextStyle(fontSize: 11, color: Color(0xFFAAAAAA)),
+                ),
+              ],
+            )),
+            if (_shapeBytes != null)
+              GestureDetector(
+                onTap: () => setState(() {
+                  _shapeBytes = null; _shapeImage = null; _shapeMask = null;
+                }),
+                child: Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: Icon(Icons.close, size: 16, color: Colors.red.shade400),
+                ),
+              ),
+          ]),
+        ),
+      ),
+      if (_shapeBytes != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(12)),
+          child: _sliderRow(
+            "Espacio QR / forma", "${_shapeGap.toStringAsFixed(1)} mód.",
+            _shapeGap, 0.0, 3.0, 12, (v) => setState(() => _shapeGap = v),
+          ),
+        ),
+      ],
+    ],
+  );
+
+  // ══════════════════════════════════════════════════════════════════
+  // PASO 3 — PERSONALIZAR
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildPersonalizarScreen() {
+    final data = _getFinalData();
+    final isEmpty = data.isEmpty;
+    final isShape = _estiloAvz == "Formas (Máscara)";
+    final effLogo = _effectiveLogo(isShape);
+
+    return Column(children: [
+      _buildAppBar("Personalizar QR",
+          showBack: true, onBack: () => setState(() => _step = 1)),
+      _buildStepBar(3),
+      // QR preview
+      _buildQrPreview(data, isEmpty, isShape),
+      // Tabs
+      _buildPersonTabs(isShape),
+      // Tab content
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+          child: _buildPersonContent(effLogo, isShape),
+        ),
+      ),
+      // Buttons
+      Container(
+        color: Colors.white,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+        child: Row(children: [
+          Expanded(child: _bigBtn(
+            "GUARDAR", Icons.save_alt,
+            isEmpty ? null : () async {
+              HapticFeedback.heavyImpact();
+              await _guardarImagen();
+            },
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: _bigBtn(
+            "COMPARTIR", Icons.share_outlined,
+            isEmpty ? null : () async {
+              HapticFeedback.heavyImpact();
+              await _mostrarSelectorCompartir();
+            },
+            outlined: true,
+          )),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _buildQrPreview(String data, bool isEmpty, bool isShape) {
     final shapeReady = _shapeMask != null && _shapeMask!.isNotEmpty;
     final bgColor = _bgMode == "Transparente"
         ? const Color(0xFFF5F5F5)
@@ -461,75 +830,55 @@ String _splitDir = "Vertical";
 
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(0, 16, 0, 16),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Center(
         child: RepaintBoundary(
           key: _qrKey,
           child: Container(
-            width: 200, height: 200,
+            width: 156, height: 156,
             decoration: BoxDecoration(
               color: bgGrad == null ? bgColor : null,
               gradient: bgGrad,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFEAEAEA), width: 1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFEAEAEA)),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(13),
+              borderRadius: BorderRadius.circular(11),
               child: Center(
                 child: isEmpty
                     ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Container(
-                          width: 46, height: 46,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0F0F0),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.qr_code_2, size: 26, color: Color(0xFFCCCCCC)),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text("Ingresa contenido",
-                            style: TextStyle(
-                                color: Color(0xFFBBBBBB), fontSize: 11, fontWeight: FontWeight.w500)),
+                        const Icon(Icons.qr_code_2, size: 38, color: Color(0xFFDDDDDD)),
+                        const SizedBox(height: 5),
+                        const Text("Sin contenido",
+                            style: TextStyle(fontSize: 10, color: Color(0xFFCCCCCC))),
                       ])
                     : (isShape && !shapeReady)
                         ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            Container(
-                              width: 46, height: 46,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF0F0F0),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.format_shapes, size: 26, color: Color(0xFFCCCCCC)),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text("Elige una forma",
-                                style: TextStyle(
-                                    color: Color(0xFFBBBBBB), fontSize: 11, fontWeight: FontWeight.w500)),
+                            const Icon(Icons.format_shapes, size: 34, color: Color(0xFFDDDDDD)),
+                            const SizedBox(height: 5),
+                            const Text("Carga la forma (Paso 2)",
+                                style: TextStyle(fontSize: 10, color: Color(0xFFCCCCCC))),
                           ])
                         : FutureBuilder<Uint8List>(
                             future: _renderPreviewPng(),
                             builder: (ctx, snap) {
                               if (snap.connectionState != ConnectionState.done || !snap.hasData) {
                                 return const SizedBox(
-                                  width: 190, height: 190,
-                                  child: Center(
-                                    child: SizedBox(
-                                      width: 18, height: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.black26),
-                                    ),
-                                  ),
+                                  width: 148, height: 148,
+                                  child: Center(child: SizedBox(
+                                    width: 18, height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.black26),
+                                  )),
                                 );
                               }
                               return Padding(
-                                padding: const EdgeInsets.all(6),
-                                child: Image.memory(
-                                  snap.data!,
-                                  width: 186, height: 186,
-                                  fit: BoxFit.contain,
-                                  gaplessPlayback: true,
-                                  filterQuality: FilterQuality.high,
-                                ),
+                                padding: const EdgeInsets.all(5),
+                                child: Image.memory(snap.data!,
+                                    width: 144, height: 144,
+                                    fit: BoxFit.contain,
+                                    gaplessPlayback: true,
+                                    filterQuality: FilterQuality.high),
                               );
                             },
                           ),
@@ -541,127 +890,53 @@ String _splitDir = "Vertical";
     );
   }
 
-  // ── Type chips ───────────────────────────────────────────────────
-  Widget _buildTypeChips() {
-    const types = [
-      "Sitio Web (URL)", "WhatsApp", "Red WiFi", "VCard (Contacto)",
-      "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre",
-    ];
-    const typeIcons = {
-      "Sitio Web (URL)": Icons.language_outlined,
-      "WhatsApp": Icons.chat_bubble_outline,
-      "Red WiFi": Icons.wifi_outlined,
-      "VCard (Contacto)": Icons.person_outline,
-      "Teléfono": Icons.phone_outlined,
-      "E-mail": Icons.email_outlined,
-      "SMS (Mensaje)": Icons.sms_outlined,
-      "Texto Libre": Icons.text_fields_outlined,
-    };
-    const shortLabels = {
-      "Sitio Web (URL)": "URL",
-      "WhatsApp": "WhatsApp",
-      "Red WiFi": "WiFi",
-      "VCard (Contacto)": "Contacto",
-      "Teléfono": "Teléfono",
-      "E-mail": "Email",
-      "SMS (Mensaje)": "SMS",
-      "Texto Libre": "Texto",
-    };
+  Widget _buildPersonTabs(bool isShape) {
+    // isShape:  Estilo(0) | Color(1) | Fondo(2)
+    // !isShape: Estilo(0) | Color(1) | Logo(2) | Fondo(3)
+    final tabCount = isShape ? 3 : 4;
+    final tabIcons = isShape
+        ? [Icons.grid_view_rounded, Icons.palette_outlined, Icons.layers_outlined]
+        : [Icons.grid_view_rounded, Icons.palette_outlined, Icons.image_outlined, Icons.layers_outlined];
+    final tabLabels = isShape
+        ? ["Estilo", "Color", "Fondo"]
+        : ["Estilo", "Color", "Logo", "Fondo"];
 
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      child: SizedBox(
-        height: 34,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: types.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 7),
-          itemBuilder: (_, i) {
-            final t = types[i];
-            final sel = t == _qrType;
-            return GestureDetector(
-              onTap: () { HapticFeedback.selectionClick(); setState(() => _qrType = t); },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                decoration: BoxDecoration(
-                  color: sel ? const Color(0xFF111111) : const Color(0xFFF2F2F2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(typeIcons[t], size: 13,
-                        color: sel ? Colors.white : const Color(0xFF888888)),
-                    const SizedBox(width: 5),
-                    Text(shortLabels[t]!, style: TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600,
-                      color: sel ? Colors.white : const Color(0xFF888888),
-                    )),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  // ── Input strip ──────────────────────────────────────────────────
-  Widget _buildInputStrip() => Container(
-    color: Colors.white,
-    padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-    child: _buildInputs(),
-  );
-
-  // ── Config tabs ──────────────────────────────────────────────────
-  Widget _buildConfigTabs() {
-    const tabIcons = [
-      Icons.grid_view_rounded,
-      Icons.palette_outlined,
-      Icons.image_outlined,
-      Icons.layers_outlined,
-    ];
-    const tabLabels = ["Estilo", "Color", "Logo", "Fondo"];
+    // clamp personTab to valid range for current mode
+    if (_personTab >= tabCount) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() => _personTab = 0);
+      });
+    }
 
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border.symmetric(
-          horizontal: BorderSide(color: Color(0xFFF0F0F0), width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFFF0F0F0), width: 1)),
       ),
       child: Row(
-        children: List.generate(4, (i) {
-          final sel = _configTab == i;
+        children: List.generate(tabCount, (i) {
+          final sel = _personTab == i;
           return Expanded(
             child: GestureDetector(
-              onTap: () { HapticFeedback.selectionClick(); setState(() => _configTab = i); },
+              onTap: () { HapticFeedback.selectionClick(); setState(() => _personTab = i); },
               behavior: HitTestBehavior.opaque,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 9),
                 decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: sel ? const Color(0xFF111111) : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
+                  border: Border(bottom: BorderSide(
+                    color: sel ? const Color(0xFF111111) : Colors.transparent,
+                    width: 2,
+                  )),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(tabIcons[i], size: 19,
-                        color: sel ? const Color(0xFF111111) : const Color(0xFFCCCCCC)),
-                    const SizedBox(height: 2),
-                    Text(tabLabels[i], style: TextStyle(
-                      fontSize: 10, fontWeight: FontWeight.w600,
-                      color: sel ? const Color(0xFF111111) : const Color(0xFFCCCCCC),
-                    )),
-                  ],
-                ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(tabIcons[i], size: 18,
+                      color: sel ? const Color(0xFF111111) : const Color(0xFFCCCCCC)),
+                  const SizedBox(height: 2),
+                  Text(tabLabels[i], style: TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w600,
+                    color: sel ? const Color(0xFF111111) : const Color(0xFFCCCCCC),
+                  )),
+                ]),
               ),
             ),
           );
@@ -670,31 +945,29 @@ String _splitDir = "Vertical";
     );
   }
 
-  // ── Config panel ─────────────────────────────────────────────────
-  Widget _buildConfigPanel(double effLogo, bool isShape) {
-    Widget content;
-    switch (_configTab) {
-      case 0:
-        content = _buildEstiloPanel();
-        break;
-      case 1:
-        content = _buildColorPanel();
-        break;
-      case 2:
-        content = isShape ? _buildShapePanel() : _buildLogoPanel(effLogo);
-        break;
-      default:
-        content = _buildFondoPanel();
+  Widget _buildPersonContent(double effLogo, bool isShape) {
+    // isShape tabs:  0=Estilo, 1=Color, 2=Fondo
+    // normal tabs:  0=Estilo, 1=Color, 2=Logo, 3=Fondo
+    final tab = _personTab.clamp(0, isShape ? 2 : 3);
+    if (isShape) {
+      switch (tab) {
+        case 1: return _buildColorTab();
+        case 2: return _buildFondoTab();
+        default: return _buildEstiloTab();
+      }
+    } else {
+      switch (tab) {
+        case 1: return _buildColorTab();
+        case 2: return _buildLogoTab(effLogo);
+        case 3: return _buildFondoTab();
+        default: return _buildEstiloTab();
+      }
     }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-      child: content,
-    );
   }
 
-  // ── Estilo panel ─────────────────────────────────────────────────
-  Widget _buildEstiloPanel() {
-    const allStyles = [
+  // ── Tab Estilo ────────────────────────────────────────────────────
+  Widget _buildEstiloTab() {
+    const styles = [
       "Liquid Pro (Gusano)",
       "Normal (Cuadrado)",
       "Barras (Vertical)",
@@ -704,382 +977,356 @@ String _splitDir = "Vertical";
       "Formas (Máscara)",
     ];
     final isSplit = _estiloAvz == "Split Liquid (Mitades)";
-    final isShape = _estiloAvz == "Formas (Máscara)";
+    final isForma = _estiloAvz == "Formas (Máscara)";
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _flatStyleGrid(allStyles, _estiloAvz, (s) => setState(() => _estiloAvz = s)),
-        if (isShape || isSplit) ...[
-          const SizedBox(height: 16),
-          _sectionLabel(isShape ? "MÓDULOS EN FORMA" : "ESTILO MÓDULOS"),
-          _subStyleRow(
-            isShape ? _mapSubStyle : _advSubStyle,
-            (s) => setState(() { if (isShape) _mapSubStyle = s; else _advSubStyle = s; }),
-          ),
-        ],
-        if (isSplit) ...[
-          const SizedBox(height: 12),
-          _sectionLabel("DIRECCIÓN SPLIT"),
-          _chipsRow(["Vertical", "Horizontal", "Diagonal"], _splitDir,
-              (v) => setState(() => _splitDir = v)),
-        ],
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  // ── Color panel ──────────────────────────────────────────────────
-  Widget _buildColorPanel() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _sectionLabel("MODO DE COLOR"),
-      _flatCard(_dropdown(
-        value: _qrColorMode,
-        items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"],
-        onChanged: (v) => setState(() => _qrColorMode = v!),
-        label: "Modo",
-      )),
-      const SizedBox(height: 14),
-      _sectionLabel("COLORES QR"),
-      _flatCard(Row(children: [
-        const Text("Color QR",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444))),
-        const Spacer(),
-        _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
-        if (_qrColorMode != "Sólido (Un Color)") ...[
-          const SizedBox(width: 14),
-          const Text("Color 2",
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444))),
-          const SizedBox(width: 8),
-          _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
-        ],
-      ])),
-      if (_qrColorMode == "Degradado Custom") ...[
-        const SizedBox(height: 8),
-        _flatCard(_dropdown(
-          value: _qrGradDir,
-          items: ["Vertical", "Horizontal", "Diagonal"],
-          onChanged: (v) => setState(() => _qrGradDir = v!),
-          label: "Dirección",
-        )),
-      ],
-      const SizedBox(height: 14),
-      _sectionLabel("OJOS DEL QR"),
-      _flatCard(Column(children: [
-        Row(children: [
-          const Text("Personalizar ojos",
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-          const Spacer(),
-          Switch.adaptive(
-            value: _customEyes, activeColor: const Color(0xFF111111),
-            onChanged: (v) => setState(() => _customEyes = v),
-          ),
-        ]),
-        if (_customEyes) ...[
-          const SizedBox(height: 10),
-          Row(children: [
-            const Text("Exterior", style: TextStyle(fontSize: 13, color: Color(0xFF666666))),
-            const SizedBox(width: 8),
-            _colorDot(_eyeExt, (c) => setState(() => _eyeExt = c)),
-            const Spacer(),
-            const Text("Interior", style: TextStyle(fontSize: 13, color: Color(0xFF666666))),
-            const SizedBox(width: 8),
-            _colorDot(_eyeInt, (c) => setState(() => _eyeInt = c)),
-          ]),
-        ],
-      ])),
-      const SizedBox(height: 8),
-    ],
-  );
-
-  // ── Logo panel ───────────────────────────────────────────────────
-  Widget _buildLogoPanel(double effLogo) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _sectionLabel("LOGO"),
-      _flatCard(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: _actionTile(
-            icon: Icons.image_outlined,
-            label: _logoBytes == null ? "Cargar Logo" : "✅ Logo cargado",
-            onTap: () async {
-              final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-              if (img != null) await _processLogo(File(img.path));
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _label("ESTILO DEL QR"),
+      GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8,
+          childAspectRatio: 0.82,
+        ),
+        itemCount: styles.length,
+        itemBuilder: (_, i) {
+          final s = styles[i];
+          final sel = s == _estiloAvz;
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _estiloAvz = s);
             },
-          )),
-          if (_logoBytes != null) ...[
-            const SizedBox(width: 10),
-            GestureDetector(
-              onTap: () => setState(() {
-                _logoBytes = null; _logoImage = null; _outerMask = null;
-              }),
-              child: Container(
-                width: 46, height: 46,
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
-                child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
-              ),
-            ),
-          ],
-        ]),
-        if (_logoBytes != null) ...[
-          const SizedBox(height: 14),
-          _sliderRow("Tamaño", "${effLogo.toInt()}px",
-              _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
-          const SizedBox(height: 4),
-          _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
-              _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
-          const SizedBox(height: 6),
-          const Text("💡 Logo blanco → fondo oscuro",
-              style: TextStyle(fontSize: 11, color: Color(0xFFAAAAAA), fontStyle: FontStyle.italic)),
-        ],
-      ])),
-      const SizedBox(height: 8),
-    ],
-  );
-
-  // ── Shape panel ──────────────────────────────────────────────────
-  Widget _buildShapePanel() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _sectionLabel("FORMA / SILUETA"),
-      _flatCard(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _actionTile(
-          icon: Icons.format_shapes,
-          label: _shapeBytes == null
-              ? "Cargar imagen de forma (PNG/JPG)"
-              : "✅ Forma cargada — Cambiar",
-          onTap: () async {
-            final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-            if (img != null) await _processShape(File(img.path));
-          },
-        ),
-        const SizedBox(height: 12),
-        if (_shapeBytes != null) ...[
-          Row(children: [
-            Expanded(child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
               decoration: BoxDecoration(
-                  color: const Color(0xFFF7F7F7),
-                  borderRadius: BorderRadius.circular(10)),
-              child: const Text("Silueta cargada como base del QR.",
-                  style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
-            )),
-            const SizedBox(width: 10),
-            GestureDetector(
-              onTap: () => setState(() {
-                _shapeBytes = null; _shapeImage = null; _shapeMask = null;
-              }),
-              child: Container(
-                width: 42, height: 42,
-                decoration: BoxDecoration(
-                    color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
-                child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
+                color: sel ? const Color(0xFF111111) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: sel ? const Color(0xFF111111) : const Color(0xFFEEEEEE),
+                  width: 1.5,
+                ),
               ),
-            ),
-          ]),
-          const SizedBox(height: 12),
-          _sliderRow("Espacio QR / forma", "${_shapeGap.toStringAsFixed(1)} mód.",
-              _shapeGap, 0.0, 3.0, 12, (v) => setState(() => _shapeGap = v)),
-          const SizedBox(height: 4),
-          const Text("0.0 = casi pegado · más alto = más encapsulado",
-              style: TextStyle(
-                  fontSize: 11, color: Color(0xFFAAAAAA), fontStyle: FontStyle.italic)),
-        ] else
-          const Text("PNG transparente ideal; JPG también sirve.",
-              style: TextStyle(
-                  fontSize: 11, color: Color(0xFFAAAAAA), fontStyle: FontStyle.italic)),
-      ])),
-      const SizedBox(height: 8),
-    ],
-  );
-
-  // ── Fondo panel ──────────────────────────────────────────────────
-  Widget _buildFondoPanel() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _sectionLabel("TIPO DE FONDO"),
-      _flatCard(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _dropdown(
-          value: _bgMode,
-          items: ["Blanco (Default)", "Transparente", "Sólido (Color)", "Degradado"],
-          onChanged: (v) => setState(() => _bgMode = v!),
-          label: "Fondo",
-        ),
-        if (_bgMode == "Sólido (Color)" || _bgMode == "Degradado") ...[
-          const SizedBox(height: 14),
-          Row(children: [
-            Text(
-              _bgMode == "Degradado" ? "Color inicio" : "Color fondo",
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444)),
-            ),
-            const Spacer(),
-            _colorDot(_bgC1, (c) => setState(() => _bgC1 = c)),
-            if (_bgMode == "Degradado") ...[
-              const SizedBox(width: 14),
-              const Text("Color fin",
-                  style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444))),
-              const SizedBox(width: 8),
-              _colorDot(_bgC2, (c) => setState(() => _bgC2 = c)),
-            ],
-          ]),
-          if (_bgMode == "Degradado") ...[
-            const SizedBox(height: 8),
-            _dropdown(
-              value: _bgGradDir,
-              items: ["Vertical", "Horizontal", "Diagonal"],
-              onChanged: (v) => setState(() => _bgGradDir = v!),
-              label: "Dirección",
-            ),
-          ],
-        ],
-      ])),
-      const SizedBox(height: 8),
-    ],
-  );
-
-  // ── Bottom bar ───────────────────────────────────────────────────
-  Widget _buildBottomBar(bool isEmpty) => Container(
-    color: Colors.white,
-    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-    child: Row(children: [
-      Expanded(child: _bigBtn(
-        "GUARDAR", Icons.save_alt,
-        isEmpty ? null : () async {
-          HapticFeedback.heavyImpact();
-          await _guardarImagen();
-        },
-      )),
-      const SizedBox(width: 10),
-      Expanded(child: _bigBtn(
-        "COMPARTIR", Icons.share_outlined,
-        isEmpty ? null : () async {
-          HapticFeedback.heavyImpact();
-          await _mostrarSelectorCompartir();
-        },
-        outlined: true,
-      )),
-    ]),
-  );
-
-  Widget _bigBtn(String label, IconData icon, VoidCallback? onTap, {bool outlined = false}) {
-    final enabled = onTap != null;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 50,
-        decoration: BoxDecoration(
-          color: outlined
-              ? (enabled ? Colors.white : const Color(0xFFF5F5F5))
-              : (enabled ? const Color(0xFF111111) : const Color(0xFFDDDDDD)),
-          borderRadius: BorderRadius.circular(13),
-          border: outlined
-              ? Border.all(
-                  color: enabled ? const Color(0xFF111111) : const Color(0xFFDDDDDD),
-                  width: 1.5)
-              : null,
-        ),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 17,
-              color: outlined
-                  ? (enabled ? const Color(0xFF111111) : const Color(0xFFBBBBBB))
-                  : (enabled ? Colors.white : const Color(0xFFAAAAAA))),
-          const SizedBox(width: 7),
-          Text(label, style: TextStyle(
-            fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5,
-            color: outlined
-                ? (enabled ? const Color(0xFF111111) : const Color(0xFFBBBBBB))
-                : (enabled ? Colors.white : const Color(0xFFAAAAAA)),
-          )),
-        ]),
-      ),
-    );
-  }
-
-  // ── Helpers ──────────────────────────────────────────────────────
-
-  Widget _flatCard(Widget child) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: child,
-  );
-
-  Widget _flatStyleGrid(List<String> styles, String selected, Function(String) onSelect) {
-    final Color previewC2 = _qrColorMode == "Sólido (Un Color)" ? _qrC1 : _qrC2;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 0.82,
-      ),
-      itemCount: styles.length,
-      itemBuilder: (ctx, i) {
-        final style = styles[i];
-        final sel = style == selected;
-        return GestureDetector(
-          onTap: () { HapticFeedback.selectionClick(); onSelect(style); },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            decoration: BoxDecoration(
-              color: sel ? const Color(0xFF111111) : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: sel ? const Color(0xFF111111) : const Color(0xFFEEEEEE),
-                width: 1.5,
-              ),
-            ),
-            child: Column(children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+              child: Column(children: [
+                Expanded(child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
                   child: Container(
                     color: sel ? const Color(0xFF222222) : const Color(0xFFF8F8F8),
                     child: CustomPaint(
                       painter: StylePreviewPainter(
-                        style: style,
-                        c1: sel ? Colors.white : _qrC1,
-                        c2: sel ? const Color(0xFFCCCCCC) : previewC2,
-                        shapeSubStyle: style.contains("Formas") ? _mapSubStyle : null,
+                        style: s,
+                        c1: sel ? Colors.white : Colors.black,
+                        c2: sel ? const Color(0xFFAAAAAA) : Colors.black,
+                        shapeSubStyle: s.contains("Formas") ? _mapSubStyle : null,
                       ),
                     ),
                   ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Text(
-                  _shortName(style),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 9, fontWeight: FontWeight.w700,
-                    color: sel ? Colors.white : const Color(0xFF999999),
+                )),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(_shortName(s),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9, fontWeight: FontWeight.w700,
+                      color: sel ? Colors.white : const Color(0xFF999999),
+                    ),
                   ),
                 ),
-              ),
-            ]),
-          ),
-        );
-      },
-    );
+              ]),
+            ),
+          );
+        },
+      ),
+      if (isSplit) ...[
+        const SizedBox(height: 14),
+        _label("ESTILO DE MÓDULOS"),
+        _chipsRow(
+          _shapeSubStyles.map(_shortName).toList(), _shortName(_advSubStyle),
+          (v) => setState(() => _advSubStyle =
+              _shapeSubStyles.firstWhere((s) => _shortName(s) == v)),
+        ),
+        const SizedBox(height: 10),
+        _label("DIRECCIÓN SPLIT"),
+        _chipsRow(["Vertical", "Horizontal", "Diagonal"], _splitDir,
+            (v) => setState(() => _splitDir = v)),
+      ],
+      if (isForma) ...[
+        const SizedBox(height: 14),
+        _label("MÓDULOS DENTRO DE LA FORMA"),
+        _chipsRow(
+          _shapeSubStyles.map(_shortName).toList(), _shortName(_mapSubStyle),
+          (v) => setState(() => _mapSubStyle =
+              _shapeSubStyles.firstWhere((s) => _shortName(s) == v)),
+        ),
+      ],
+    ]);
   }
 
-  Widget _sectionLabel(String label) => Padding(
+  // ── Tab Color ─────────────────────────────────────────────────────
+  Widget _buildColorTab() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _label("MODO DE COLOR"),
+      _chipsRow(
+        ["Auto (Logo)", "Sólido", "Degradado"],
+        _qrColorMode.contains("Auto") ? "Auto (Logo)"
+            : _qrColorMode.contains("Sólido") ? "Sólido" : "Degradado",
+        (v) => setState(() {
+          if (v == "Auto (Logo)") _qrColorMode = "Automático (Logo)";
+          else if (v == "Sólido") _qrColorMode = "Sólido (Un Color)";
+          else _qrColorMode = "Degradado Custom";
+        }),
+      ),
+      const SizedBox(height: 14),
+      _label("COLORES DEL QR"),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        child: Row(children: [
+          const Text("Color 1", style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+          const SizedBox(width: 10),
+          _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
+          if (_qrColorMode != "Sólido (Un Color)") ...[
+            const SizedBox(width: 20),
+            const Text("Color 2", style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+            const SizedBox(width: 10),
+            _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
+          ],
+        ]),
+      ),
+      if (_qrColorMode == "Degradado Custom") ...[
+        const SizedBox(height: 10),
+        _label("DIRECCIÓN DEL DEGRADADO"),
+        _chipsRow(["Vertical", "Horizontal", "Diagonal"], _qrGradDir,
+            (v) => setState(() => _qrGradDir = v)),
+      ],
+      const SizedBox(height: 14),
+      _label("OJOS DEL QR"),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          Row(children: [
+            const Text("Personalizar ojos",
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            const Spacer(),
+            Switch.adaptive(
+              value: _customEyes, activeColor: const Color(0xFF111111),
+              onChanged: (v) => setState(() => _customEyes = v),
+            ),
+          ]),
+          if (_customEyes) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              const Text("Exterior",
+                  style: TextStyle(fontSize: 13, color: Color(0xFF666666))),
+              const SizedBox(width: 8),
+              _colorDot(_eyeExt, (c) => setState(() => _eyeExt = c)),
+              const Spacer(),
+              const Text("Interior",
+                  style: TextStyle(fontSize: 13, color: Color(0xFF666666))),
+              const SizedBox(width: 8),
+              _colorDot(_eyeInt, (c) => setState(() => _eyeInt = c)),
+            ]),
+          ],
+        ]),
+      ),
+    ],
+  );
+
+  // ── Tab Logo ──────────────────────────────────────────────────────
+  Widget _buildLogoTab(double effLogo) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _label("LOGO CENTRAL"),
+      Container(
+        decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          GestureDetector(
+            onTap: () async {
+              HapticFeedback.lightImpact();
+              final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+              if (img != null) await _processLogo(File(img.path));
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F2F2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: _logoBytes != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.memory(_logoBytes!, fit: BoxFit.cover))
+                      : const Icon(Icons.image_outlined, size: 20,
+                          color: Color(0xFF888888)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _logoBytes != null ? "✅ Logo cargado" : "Cargar logo",
+                      style: const TextStyle(fontSize: 14,
+                          fontWeight: FontWeight.w600, color: Color(0xFF222222)),
+                    ),
+                    Text(
+                      _logoBytes != null ? "Toca para cambiar" : "PNG o JPG",
+                      style: const TextStyle(fontSize: 11, color: Color(0xFFAAAAAA)),
+                    ),
+                  ],
+                )),
+                if (_logoBytes != null)
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _logoBytes = null; _logoImage = null; _outerMask = null;
+                    }),
+                    child: Container(
+                      width: 32, height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8)),
+                      child: Icon(Icons.close, size: 16, color: Colors.red.shade400),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+          if (_logoBytes != null) ...[
+            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(children: [
+                _sliderRow("Tamaño", "${effLogo.toInt()}px",
+                    _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
+                const SizedBox(height: 10),
+                _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
+                    _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
+              ]),
+            ),
+          ],
+        ]),
+      ),
+    ],
+  );
+
+  // ── Tab Fondo ─────────────────────────────────────────────────────
+  Widget _buildFondoTab() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _label("TIPO DE FONDO"),
+      _chipsRow(
+        ["Blanco", "Transparente", "Sólido", "Degradado"],
+        _bgMode.contains("Blanco") ? "Blanco"
+            : _bgMode.contains("Trans") ? "Transparente"
+            : _bgMode.contains("Sólido") ? "Sólido" : "Degradado",
+        (v) => setState(() {
+          if (v == "Blanco") _bgMode = "Blanco (Default)";
+          else if (v == "Transparente") _bgMode = "Transparente";
+          else if (v == "Sólido") _bgMode = "Sólido (Color)";
+          else _bgMode = "Degradado";
+        }),
+      ),
+      if (_bgMode == "Sólido (Color)" || _bgMode == "Degradado") ...[
+        const SizedBox(height: 14),
+        _label("COLORES DEL FONDO"),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            Text(
+              _bgMode == "Degradado" ? "Color 1" : "Color",
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500,
+                  color: Color(0xFF555555)),
+            ),
+            const SizedBox(width: 10),
+            _colorDot(_bgC1, (c) => setState(() => _bgC1 = c)),
+            if (_bgMode == "Degradado") ...[
+              const SizedBox(width: 20),
+              const Text("Color 2", style: TextStyle(fontSize: 13,
+                  fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+              const SizedBox(width: 10),
+              _colorDot(_bgC2, (c) => setState(() => _bgC2 = c)),
+            ],
+          ]),
+        ),
+        if (_bgMode == "Degradado") ...[
+          const SizedBox(height: 10),
+          _label("DIRECCIÓN"),
+          _chipsRow(["Vertical", "Horizontal", "Diagonal"], _bgGradDir,
+              (v) => setState(() => _bgGradDir = v)),
+        ],
+      ],
+    ],
+  );
+
+  // ══════════════════════════════════════════════════════════════════
+  // WIDGETS COMPARTIDOS
+  // ══════════════════════════════════════════════════════════════════
+
+  Widget _buildAppBar(String title, {bool showBack = false, VoidCallback? onBack}) =>
+      Container(
+        color: Colors.white,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(children: [
+          if (showBack)
+            GestureDetector(
+              onTap: () { HapticFeedback.lightImpact(); onBack?.call(); },
+              child: Container(
+                width: 36, height: 36, margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F2F2),
+                  borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.arrow_back_ios_new_rounded,
+                    size: 15, color: Color(0xFF333333)),
+              ),
+            )
+          else
+            Container(
+              width: 28, height: 28, margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: Colors.black, borderRadius: BorderRadius.circular(7)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(7),
+                child: Image.asset('assets/app_icon.png', fit: BoxFit.cover,
+                    errorBuilder: (c, e, s) =>
+                        const Icon(Icons.qr_code_2, color: Colors.white, size: 16)),
+              ),
+            ),
+          Expanded(child: Text(title, style: const TextStyle(
+              fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.3))),
+        ]),
+      );
+
+  Widget _buildStepBar(int step) => Container(
+    color: Colors.white,
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+    child: Row(children: List.generate(3, (i) => Expanded(
+      child: Container(
+        margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
+        height: 3,
+        decoration: BoxDecoration(
+          color: i + 1 <= step ? const Color(0xFF111111) : const Color(0xFFEEEEEE),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    ))),
+  );
+
+  Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(label,
-        style: const TextStyle(
-            fontSize: 10, fontWeight: FontWeight.w700,
-            color: Color(0xFFAAAAAA), letterSpacing: 1.2)),
+    child: Text(text, style: const TextStyle(
+        fontSize: 10, fontWeight: FontWeight.w700,
+        color: Color(0xFFAAAAAA), letterSpacing: 1.2)),
   );
 
   String _shortName(String s) {
@@ -1092,11 +1339,6 @@ String _splitDir = "Vertical";
     if (s.contains("Formas")) return "Formas";
     return s;
   }
-
-  Widget _subStyleRow(String current, Function(String) onSelect) =>
-      _chipsRow(_shapeSubStyles.map(_shortName).toList(),
-          _shortName(current),
-          (v) => onSelect(_shapeSubStyles.firstWhere((s) => _shortName(s) == v)));
 
   Widget _chipsRow(List<String> items, String selected, Function(String) onSelect) =>
       SizedBox(
@@ -1131,8 +1373,8 @@ String _splitDir = "Vertical";
         ),
       );
 
-  Widget _sliderRow(String label, String valueStr, double value, double min, double max,
-      int divisions, Function(double) onChanged) =>
+  Widget _sliderRow(String label, String valueStr, double value,
+      double min, double max, int divisions, Function(double) onChanged) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Text(label, style: const TextStyle(
@@ -1155,58 +1397,60 @@ String _splitDir = "Vertical";
         ),
       ]);
 
-  Widget _actionTile({required IconData icon, required String label, required VoidCallback onTap}) =>
+  Widget _bigBtn(String label, IconData icon, VoidCallback? onTap,
+      {bool outlined = false}) {
+    final enabled = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 50,
+        decoration: BoxDecoration(
+          color: outlined
+              ? (enabled ? Colors.white : const Color(0xFFF5F5F5))
+              : (enabled ? const Color(0xFF111111) : const Color(0xFFDDDDDD)),
+          borderRadius: BorderRadius.circular(13),
+          border: outlined
+              ? Border.all(
+                  color: enabled ? const Color(0xFF111111) : const Color(0xFFDDDDDD),
+                  width: 1.5)
+              : null,
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 17,
+              color: outlined
+                  ? (enabled ? const Color(0xFF111111) : const Color(0xFFBBBBBB))
+                  : (enabled ? Colors.white : const Color(0xFFAAAAAA))),
+          const SizedBox(width: 7),
+          Text(label, style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.3,
+            color: outlined
+                ? (enabled ? const Color(0xFF111111) : const Color(0xFFBBBBBB))
+                : (enabled ? Colors.white : const Color(0xFFAAAAAA)),
+          )),
+        ]),
+      ),
+    );
+  }
+
+  // _actionTile usada por _mostrarSelectorCompartir
+  Widget _actionTile({required IconData icon, required String label,
+      required VoidCallback onTap}) =>
       GestureDetector(
         onTap: () { HapticFeedback.lightImpact(); onTap(); },
         child: Container(
-          height: 46,
+          height: 50,
           decoration: BoxDecoration(
             color: const Color(0xFFF2F2F2),
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(icon, size: 18, color: Colors.black87),
             const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            Text(label, style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600)),
           ]),
         ),
-      );
-
-  Widget _dropdown({
-    required String value,
-    required List<String> items,
-    required Function(String?) onChanged,
-    String? label,
-    bool compact = false,
-  }) =>
-      DropdownButtonFormField<String>(
-        value: value,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF111111), width: 1.5),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
-          filled: true,
-          fillColor: Colors.white,
-        ),
-        style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFF888888)),
-        dropdownColor: Colors.white,
-        items: items.map((e) => DropdownMenuItem(
-            value: e, child: Text(e, style: const TextStyle(fontSize: 13)))).toList(),
-        onChanged: onChanged,
       );
 
   Widget _buildInputs() {
@@ -1216,13 +1460,13 @@ String _splitDir = "Vertical";
       case "WhatsApp":
         return Column(children: [
           _field(_c1, "+595981000000", type: TextInputType.phone),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c2, "Mensaje (opcional)"),
         ]);
       case "Red WiFi":
         return Column(children: [
           _field(_c1, "Nombre de la red"),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c2, "Contraseña", obscure: true),
         ]);
       case "VCard (Contacto)":
@@ -1232,11 +1476,11 @@ String _splitDir = "Vertical";
             const SizedBox(width: 8),
             Expanded(child: _field(_c2, "Apellido")),
           ]),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c3, "Empresa"),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c4, "Teléfono", type: TextInputType.phone),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c5, "Email", type: TextInputType.emailAddress),
         ]);
       case "Teléfono":
@@ -1244,50 +1488,47 @@ String _splitDir = "Vertical";
       case "E-mail":
         return Column(children: [
           _field(_c1, "correo@ejemplo.com", type: TextInputType.emailAddress),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c2, "Asunto"),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c3, "Mensaje"),
         ]);
       case "SMS (Mensaje)":
         return Column(children: [
           _field(_c1, "+595981000000", type: TextInputType.phone),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _field(_c2, "Texto del SMS"),
         ]);
       default:
-        return _field(_c1, "Escribe tu texto aquí...", maxLines: 2);
+        return _field(_c1, "Escribe tu texto aquí...", maxLines: 3);
     }
   }
 
   Widget _field(TextEditingController c, String hint,
-      {TextInputType type = TextInputType.text, bool obscure = false, int maxLines = 1}) =>
+      {TextInputType type = TextInputType.text,
+      bool obscure = false, int maxLines = 1}) =>
       TextField(
         controller: c,
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
+          hintStyle: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 14),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF111111), width: 1.5),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
-          filled: true,
-          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          filled: true, fillColor: Colors.white,
         ),
-        style: const TextStyle(fontSize: 13, color: Color(0xFF222222)),
-        keyboardType: type,
-        obscureText: obscure,
-        maxLines: maxLines,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF222222)),
+        keyboardType: type, obscureText: obscure, maxLines: maxLines,
         onChanged: (_) => setState(() {}),
       );
 
@@ -1298,7 +1539,6 @@ String _splitDir = "Vertical";
       decoration: BoxDecoration(
         color: cur, shape: BoxShape.circle,
         border: Border.all(color: const Color(0xFFE0E0E0), width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4)],
       ),
       child: Icon(Icons.colorize, size: 13,
           color: cur.computeLuminance() > 0.5 ? Colors.black38 : Colors.white60),
@@ -1322,16 +1562,13 @@ String _splitDir = "Vertical";
         ].map((c) => GestureDetector(
           onTap: () {
             HapticFeedback.selectionClick();
-            onSel(c);
-            Navigator.pop(ctx);
-            setState(() {});
+            onSel(c); Navigator.pop(ctx); setState(() {});
           },
           child: Container(
             width: 42, height: 42,
             decoration: BoxDecoration(
               color: c, shape: BoxShape.circle,
-              border: Border.all(color: Colors.black12),
-            ),
+              border: Border.all(color: Colors.black12)),
           ),
         )).toList(),
       ),
