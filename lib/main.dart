@@ -167,7 +167,8 @@ class _MainScreenState extends State<MainScreen>
   final _c4 = TextEditingController();
   final _c5 = TextEditingController();
 
-  int _tab = 0; // 0=Básico, 1=Avanzado
+  int _tab = 1; // siempre avanzado — nuevo UI usa _estiloAvz siempre
+  int _configTab = 0; // 0=Estilo 1=Color 2=Logo 3=Fondo
   String _qrType = "Sitio Web (URL)";
   String _estilo = "Liquid Pro (Gusano)";
   String _estiloAvz = "Split Liquid (Mitades)";
@@ -400,29 +401,26 @@ String _splitDir = "Vertical";
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // UI PRINCIPAL
+  // UI PRINCIPAL — REDISEÑO FLAT MINIMALISTA
   // ═══════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final data = _getFinalData();
     final isEmpty = data.isEmpty;
-    final isAdv = _tab == 1;
-    final estilo = isAdv ? _estiloAvz : _estilo;
-    final isShape = estilo == "Formas (Máscara)";
+    final isShape = _estiloAvz == "Formas (Máscara)";
     final effLogo = _effectiveLogo(isShape);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: const Color(0xFFF0F0F0),
       body: SafeArea(
         child: Column(
           children: [
             _buildTopBar(),
-            _buildTabSelector(),
-            Expanded(
-              child: _tab == 0 ? _buildBasicContent(data, isEmpty, effLogo)
-                              : _buildAdvancedContent(data, isEmpty, effLogo),
-            ),
-            _buildQrPreviewPanel(data, isEmpty, estilo, isAdv, effLogo),
+            _buildQrHero(data, isEmpty, isShape),
+            _buildTypeChips(),
+            _buildInputStrip(),
+            _buildConfigTabs(),
+            Expanded(child: _buildConfigPanel(effLogo, isShape)),
             _buildBottomBar(isEmpty),
           ],
         ),
@@ -433,798 +431,539 @@ String _splitDir = "Vertical";
   // ── Top bar ──────────────────────────────────────────────────────
   Widget _buildTopBar() => Container(
     color: Colors.white,
-    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
     child: Row(
       children: [
         Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(10),
-          ),
+          width: 30, height: 30,
+          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(7)),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.asset('assets/app_icon.png',
-                fit: BoxFit.cover,
+            borderRadius: BorderRadius.circular(7),
+            child: Image.asset('assets/app_icon.png', fit: BoxFit.cover,
                 errorBuilder: (c, e, s) =>
-                    const Icon(Icons.qr_code_2, color: Colors.white, size: 22)),
+                    const Icon(Icons.qr_code_2, color: Colors.white, size: 18)),
           ),
         ),
         const SizedBox(width: 10),
         const Text("QR+Logo",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20, letterSpacing: -0.8)),
-        const Spacer(),
-        _iconBtn(Icons.palette_outlined, () => _showOptionsSheet()),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, letterSpacing: -0.5)),
       ],
     ),
   );
 
-  Widget _iconBtn(IconData icon, VoidCallback onTap) => GestureDetector(
-    onTap: () { HapticFeedback.lightImpact(); onTap(); },
-    child: Container(
-      width: 40, height: 40,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F0F0),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(icon, size: 20, color: Colors.black),
-    ),
-  );
+  // ── QR Hero ──────────────────────────────────────────────────────
+  Widget _buildQrHero(String data, bool isEmpty, bool isShape) {
+    final shapeReady = _shapeMask != null && _shapeMask!.isNotEmpty;
+    final bgColor = _bgMode == "Transparente"
+        ? const Color(0xFFF5F5F5)
+        : _bgMode == "Sólido (Color)" ? _bgC1 : Colors.white;
+    final bgGrad = _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null;
 
-  // ── Tab selector ─────────────────────────────────────────────────
-  Widget _buildTabSelector() => Container(
-    color: Colors.white,
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-    child: Container(
-      height: 42,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F0F0),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          _tabBtn("Básico", 0),
-          _tabBtn("Avanzado", 1),
-        ],
-      ),
-    ),
-  );
-
-  Widget _tabBtn(String label, int index) => Expanded(
-    child: GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); setState(() => _tab = index); },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: _tab == index ? Colors.black : Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
-          boxShadow: _tab == index
-              ? [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 8, offset: const Offset(0, 2))]
-              : [],
-        ),
-        child: Center(
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: _tab == index ? Colors.white : Colors.black54)),
-        ),
-      ),
-    ),
-  );
-
-  // ── Básico content ───────────────────────────────────────────────
-  Widget _buildBasicContent(String data, bool isEmpty, double effLogo) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionLabel("ESTILO"),
-          _styleGrid(_basicStyles, _estilo, (s) => setState(() => _estilo = s)),
-          const SizedBox(height: 14),
-          _sectionLabel("CONTENIDO"),
-          _contentCard(),
-          const SizedBox(height: 14),
-          _sectionLabel("LOGO"),
-          _logoCard(effLogo, false),
-          const SizedBox(height: 14),
-          _sectionLabel("FONDO"),
-          _bgCard(false),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  // ── Avanzado content ─────────────────────────────────────────────
-  Widget _buildAdvancedContent(String data, bool isEmpty, double effLogo) {
-    final isShape = _estiloAvz == "Formas (Máscara)";
-    final isSplit = _estiloAvz == "Split Liquid (Mitades)";
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionLabel("ESTILO AVANZADO"),
-          _styleGrid(_advStyles, _estiloAvz, (s) => setState(() => _estiloAvz = s)),
-
-          if (isShape || isSplit) ...[
-            const SizedBox(height: 12),
-            _sectionLabel(isShape ? "MÓDULOS EN FORMA" : "ESTILO MÓDULOS"),
-            _subStyleRow(
-                isShape ? _mapSubStyle : _advSubStyle,
-                (s) => setState(() { if (isShape) _mapSubStyle = s; else _advSubStyle = s; })),
-          ],
-
-          if (isSplit) ...[
-            const SizedBox(height: 12),
-            _sectionLabel("DIRECCIÓN SPLIT"),
-            _chipsRow(["Vertical", "Horizontal", "Diagonal"], _splitDir,
-                (v) => setState(() => _splitDir = v)),
-          ],
-
-          const SizedBox(height: 14),
-          _sectionLabel("COLOR"),
-          _colorCardAdv(),
-
-          const SizedBox(height: 14),
-          _sectionLabel("OJOS DEL QR"),
-          _eyesCard(),
-
-          const SizedBox(height: 14),
-          _sectionLabel(isShape ? "FORMA / SILUETA" : "LOGO"),
-          isShape ? _shapeCard() : _logoCard(effLogo, false),
-
-          const SizedBox(height: 14),
-          _sectionLabel("CONTENIDO"),
-          _contentCard(),
-
-          const SizedBox(height: 14),
-          _sectionLabel("FONDO"),
-          _bgCard(true),
-
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  // ── Section label ────────────────────────────────────────────────
-  Widget _sectionLabel(String label) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(label,
-        style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Colors.black38,
-            letterSpacing: 1.2)),
-  );
-
-  // ── Style grid ───────────────────────────────────────────────────
-
-Widget _styleGrid(List<String> styles, String selected, Function(String) onSelect) {
-  final Color previewC2 =
-      _qrColorMode == "Sólido (Un Color)" ? _qrC1 : _qrC2;
-
-  return SizedBox(
-    height: 122,
-    child: ListView.separated(
-      scrollDirection: Axis.horizontal,
-      itemCount: styles.length,
-      separatorBuilder: (_, __) => const SizedBox(width: 10),
-      itemBuilder: (ctx, i) {
-        final style = styles[i];
-        final sel = style == selected;
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            onSelect(style);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: 100,
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(0, 16, 0, 16),
+      child: Center(
+        child: RepaintBoundary(
+          key: _qrKey,
+          child: Container(
+            width: 200, height: 200,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                  color: sel ? Colors.black : Colors.transparent, width: 2.5),
-              boxShadow: [
-                BoxShadow(
-                    color: sel
-                        ? Colors.black.withOpacity(0.15)
-                        : Colors.black.withOpacity(0.05),
-                    blurRadius: sel ? 12 : 4,
-                    offset: const Offset(0, 3)),
-              ],
+              color: bgGrad == null ? bgColor : null,
+              gradient: bgGrad,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFEAEAEA), width: 1),
             ),
-            child: Column(children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(14)),
-                  child: Stack(alignment: Alignment.center, children: [
-                    Container(
-                      width: 96,
-                      height: 96,
-                      color: const Color(0xFFF7F7F7),
-                      child: CustomPaint(
-                        painter: StylePreviewPainter(
-                          style: style,
-                          c1: _qrC1,
-                          c2: previewC2,
-                          shapeSubStyle:
-                              style.contains("Formas") ? _mapSubStyle : null,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(13),
+              child: Center(
+                child: isEmpty
+                    ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Container(
+                          width: 46, height: 46,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F0F0),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.qr_code_2, size: 26, color: Color(0xFFCCCCCC)),
                         ),
-                      ),
-                    ),
-                    if (_logoBytes != null && !style.contains("Formas"))
-                      SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: Image.memory(_logoBytes!, fit: BoxFit.contain),
-                      )
-                    else if (!style.contains("Formas"))
-                      const Text(
-                        "LOGO",
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black45,
-                        ),
-                      ),
-                  ]),
-                ),
+                        const SizedBox(height: 8),
+                        const Text("Ingresa contenido",
+                            style: TextStyle(
+                                color: Color(0xFFBBBBBB), fontSize: 11, fontWeight: FontWeight.w500)),
+                      ])
+                    : (isShape && !shapeReady)
+                        ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            Container(
+                              width: 46, height: 46,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0F0F0),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.format_shapes, size: 26, color: Color(0xFFCCCCCC)),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text("Elige una forma",
+                                style: TextStyle(
+                                    color: Color(0xFFBBBBBB), fontSize: 11, fontWeight: FontWeight.w500)),
+                          ])
+                        : FutureBuilder<Uint8List>(
+                            future: _renderPreviewPng(),
+                            builder: (ctx, snap) {
+                              if (snap.connectionState != ConnectionState.done || !snap.hasData) {
+                                return const SizedBox(
+                                  width: 190, height: 190,
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 18, height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.black26),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Image.memory(
+                                  snap.data!,
+                                  width: 186, height: 186,
+                                  fit: BoxFit.contain,
+                                  gaplessPlayback: true,
+                                  filterQuality: FilterQuality.high,
+                                ),
+                              );
+                            },
+                          ),
               ),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: sel ? Colors.black : const Color(0xFFF8F8F8),
-                  borderRadius:
-                      const BorderRadius.vertical(bottom: Radius.circular(14)),
-                ),
-                child: Text(_shortName(style),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: sel ? Colors.white : Colors.black54,
-                        letterSpacing: -0.2)),
-              ),
-            ]),
+            ),
           ),
-        );
-      },
-    ),
-  );
-}
-
-String _shortName(String s) {
-    if (s.contains("Gusano")) return "Liquid";
-    if (s.contains("Cuadrado")) return "Normal";
-    if (s.contains("Barras")) return "Barras";
-    if (s.contains("Puntos")) return "Círculos";
-    if (s.contains("Rombos")) return "Diamantes";
-    if (s.contains("Split")) return "Split";
-    if (s.contains("Formas")) return "Formas";
-    return s;
+        ),
+      ),
+    );
   }
 
-  // ── Sub-style row ────────────────────────────────────────────────
-  Widget _subStyleRow(String current, Function(String) onSelect) =>
-      _chipsRow(_shapeSubStyles.map(_shortName).toList(),
-          _shortName(current),
-          (v) => onSelect(_shapeSubStyles.firstWhere((s) => _shortName(s) == v)));
+  // ── Type chips ───────────────────────────────────────────────────
+  Widget _buildTypeChips() {
+    const types = [
+      "Sitio Web (URL)", "WhatsApp", "Red WiFi", "VCard (Contacto)",
+      "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre",
+    ];
+    const typeIcons = {
+      "Sitio Web (URL)": Icons.language_outlined,
+      "WhatsApp": Icons.chat_bubble_outline,
+      "Red WiFi": Icons.wifi_outlined,
+      "VCard (Contacto)": Icons.person_outline,
+      "Teléfono": Icons.phone_outlined,
+      "E-mail": Icons.email_outlined,
+      "SMS (Mensaje)": Icons.sms_outlined,
+      "Texto Libre": Icons.text_fields_outlined,
+    };
+    const shortLabels = {
+      "Sitio Web (URL)": "URL",
+      "WhatsApp": "WhatsApp",
+      "Red WiFi": "WiFi",
+      "VCard (Contacto)": "Contacto",
+      "Teléfono": "Teléfono",
+      "E-mail": "Email",
+      "SMS (Mensaje)": "SMS",
+      "Texto Libre": "Texto",
+    };
 
-  Widget _chipsRow(List<String> items, String selected, Function(String) onSelect) =>
-      SizedBox(
-        height: 38,
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      child: SizedBox(
+        height: 34,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemCount: types.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 7),
           itemBuilder: (_, i) {
-            final item = items[i];
-            final sel = item == selected;
+            final t = types[i];
+            final sel = t == _qrType;
             return GestureDetector(
-              onTap: () { HapticFeedback.selectionClick(); onSelect(item); },
+              onTap: () { HapticFeedback.selectionClick(); setState(() => _qrType = t); },
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                duration: const Duration(milliseconds: 140),
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
                 decoration: BoxDecoration(
-                  color: sel ? Colors.black : Colors.white,
+                  color: sel ? const Color(0xFF111111) : const Color(0xFFF2F2F2),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: sel ? Colors.black : Colors.black12, width: 1.5),
                 ),
-                child: Text(item,
-                    style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600,
-                        color: sel ? Colors.white : Colors.black54)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(typeIcons[t], size: 13,
+                        color: sel ? Colors.white : const Color(0xFF888888)),
+                    const SizedBox(width: 5),
+                    Text(shortLabels[t]!, style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600,
+                      color: sel ? Colors.white : const Color(0xFF888888),
+                    )),
+                  ],
+                ),
               ),
             );
           },
         ),
-      );
+      ),
+    );
+  }
 
-  // ── Content card ─────────────────────────────────────────────────
-  Widget _contentCard() => _card(Column(children: [
-    _typeDropdown(),
-    const SizedBox(height: 10),
-    _buildInputs(),
-  ]));
+  // ── Input strip ──────────────────────────────────────────────────
+  Widget _buildInputStrip() => Container(
+    color: Colors.white,
+    padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+    child: _buildInputs(),
+  );
 
-  // ── Logo card ────────────────────────────────────────────────────
-  Widget _logoCard(double effLogo, bool isShape) => _card(Column(
+  // ── Config tabs ──────────────────────────────────────────────────
+  Widget _buildConfigTabs() {
+    const tabIcons = [
+      Icons.grid_view_rounded,
+      Icons.palette_outlined,
+      Icons.image_outlined,
+      Icons.layers_outlined,
+    ];
+    const tabLabels = ["Estilo", "Color", "Logo", "Fondo"];
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border.symmetric(
+          horizontal: BorderSide(color: Color(0xFFF0F0F0), width: 1),
+        ),
+      ),
+      child: Row(
+        children: List.generate(4, (i) {
+          final sel = _configTab == i;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () { HapticFeedback.selectionClick(); setState(() => _configTab = i); },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: sel ? const Color(0xFF111111) : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(tabIcons[i], size: 19,
+                        color: sel ? const Color(0xFF111111) : const Color(0xFFCCCCCC)),
+                    const SizedBox(height: 2),
+                    Text(tabLabels[i], style: TextStyle(
+                      fontSize: 10, fontWeight: FontWeight.w600,
+                      color: sel ? const Color(0xFF111111) : const Color(0xFFCCCCCC),
+                    )),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  // ── Config panel ─────────────────────────────────────────────────
+  Widget _buildConfigPanel(double effLogo, bool isShape) {
+    Widget content;
+    switch (_configTab) {
+      case 0:
+        content = _buildEstiloPanel();
+        break;
+      case 1:
+        content = _buildColorPanel();
+        break;
+      case 2:
+        content = isShape ? _buildShapePanel() : _buildLogoPanel(effLogo);
+        break;
+      default:
+        content = _buildFondoPanel();
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+      child: content,
+    );
+  }
+
+  // ── Estilo panel ─────────────────────────────────────────────────
+  Widget _buildEstiloPanel() {
+    const allStyles = [
+      "Liquid Pro (Gusano)",
+      "Normal (Cuadrado)",
+      "Barras (Vertical)",
+      "Circular (Puntos)",
+      "Diamantes (Rombos)",
+      "Split Liquid (Mitades)",
+      "Formas (Máscara)",
+    ];
+    final isSplit = _estiloAvz == "Split Liquid (Mitades)";
+    final isShape = _estiloAvz == "Formas (Máscara)";
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _flatStyleGrid(allStyles, _estiloAvz, (s) => setState(() => _estiloAvz = s)),
+        if (isShape || isSplit) ...[
+          const SizedBox(height: 16),
+          _sectionLabel(isShape ? "MÓDULOS EN FORMA" : "ESTILO MÓDULOS"),
+          _subStyleRow(
+            isShape ? _mapSubStyle : _advSubStyle,
+            (s) => setState(() { if (isShape) _mapSubStyle = s; else _advSubStyle = s; }),
+          ),
+        ],
+        if (isSplit) ...[
+          const SizedBox(height: 12),
+          _sectionLabel("DIRECCIÓN SPLIT"),
+          _chipsRow(["Vertical", "Horizontal", "Diagonal"], _splitDir,
+              (v) => setState(() => _splitDir = v)),
+        ],
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // ── Color panel ──────────────────────────────────────────────────
+  Widget _buildColorPanel() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Row(children: [
-        Expanded(
-          child: _actionTile(
+      _sectionLabel("MODO DE COLOR"),
+      _flatCard(_dropdown(
+        value: _qrColorMode,
+        items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"],
+        onChanged: (v) => setState(() => _qrColorMode = v!),
+        label: "Modo",
+      )),
+      const SizedBox(height: 14),
+      _sectionLabel("COLORES QR"),
+      _flatCard(Row(children: [
+        const Text("Color QR",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444))),
+        const Spacer(),
+        _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
+        if (_qrColorMode != "Sólido (Un Color)") ...[
+          const SizedBox(width: 14),
+          const Text("Color 2",
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444))),
+          const SizedBox(width: 8),
+          _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
+        ],
+      ])),
+      if (_qrColorMode == "Degradado Custom") ...[
+        const SizedBox(height: 8),
+        _flatCard(_dropdown(
+          value: _qrGradDir,
+          items: ["Vertical", "Horizontal", "Diagonal"],
+          onChanged: (v) => setState(() => _qrGradDir = v!),
+          label: "Dirección",
+        )),
+      ],
+      const SizedBox(height: 14),
+      _sectionLabel("OJOS DEL QR"),
+      _flatCard(Column(children: [
+        Row(children: [
+          const Text("Personalizar ojos",
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          const Spacer(),
+          Switch.adaptive(
+            value: _customEyes, activeColor: const Color(0xFF111111),
+            onChanged: (v) => setState(() => _customEyes = v),
+          ),
+        ]),
+        if (_customEyes) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            const Text("Exterior", style: TextStyle(fontSize: 13, color: Color(0xFF666666))),
+            const SizedBox(width: 8),
+            _colorDot(_eyeExt, (c) => setState(() => _eyeExt = c)),
+            const Spacer(),
+            const Text("Interior", style: TextStyle(fontSize: 13, color: Color(0xFF666666))),
+            const SizedBox(width: 8),
+            _colorDot(_eyeInt, (c) => setState(() => _eyeInt = c)),
+          ]),
+        ],
+      ])),
+      const SizedBox(height: 8),
+    ],
+  );
+
+  // ── Logo panel ───────────────────────────────────────────────────
+  Widget _buildLogoPanel(double effLogo) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionLabel("LOGO"),
+      _flatCard(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: _actionTile(
             icon: Icons.image_outlined,
             label: _logoBytes == null ? "Cargar Logo" : "✅ Logo cargado",
             onTap: () async {
               final img = await ImagePicker().pickImage(source: ImageSource.gallery);
               if (img != null) await _processLogo(File(img.path));
             },
-          ),
-        ),
-        if (_logoBytes != null) ...[
-          const SizedBox(width: 10),
-          GestureDetector(
-            onTap: () => setState(() { _logoBytes = null; _logoImage = null; _outerMask = null; }),
-            child: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
-            ),
-          ),
-        ],
-      ]),
-      if (_logoBytes != null) ...[
-        const SizedBox(height: 12),
-        Row(children: [
-          const Text("Tamaño", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Text("${effLogo.toInt()}px", style: const TextStyle(fontSize: 12, color: Colors.black45)),
-        ]),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 3, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7)),
-          child: Slider(
-            value: _logoSize, min: 30, max: 85, divisions: 11,
-            activeColor: Colors.black, inactiveColor: Colors.black12,
-            onChanged: (v) => setState(() => _logoSize = v),
-          ),
-        ),
-        Row(children: [
-          const Text("Separación", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Text("${_auraSize.toStringAsFixed(1)} mód.", style: const TextStyle(fontSize: 12, color: Colors.black45)),
-        ]),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 3, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7)),
-          child: Slider(
-            value: _auraSize, min: 1.0, max: 3.0, divisions: 4,
-            activeColor: Colors.black, inactiveColor: Colors.black12,
-            onChanged: (v) => setState(() => _auraSize = v),
-          ),
-        ),
-      ],
-      const Padding(
-        padding: EdgeInsets.only(top: 4),
-        child: Text("💡 Logo blanco → fondo oscuro",
-            style: TextStyle(fontSize: 11, color: Colors.black38, fontStyle: FontStyle.italic)),
-      ),
-    ],
-  ));
-
-  // ── Shape card ───────────────────────────────────────────────────
-Widget _shapeCard() => _card(
-  Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _actionTile(
-        icon: Icons.format_shapes,
-        label: _shapeBytes == null
-            ? "Cargar imagen de forma (PNG/JPG)"
-            : "✅ Forma cargada — Cambiar",
-        onTap: () async {
-          final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-          if (img != null) await _processShape(File(img.path));
-        },
-      ),
-      const SizedBox(height: 12),
-      if (_shapeBytes != null) ...[
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F7F7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  "La silueta cargada se usará como base del QR con forma.",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
+          )),
+          if (_logoBytes != null) ...[
             const SizedBox(width: 10),
             GestureDetector(
               onTap: () => setState(() {
-                _shapeBytes = null;
-                _shapeImage = null;
-                _shapeMask = null;
+                _logoBytes = null; _logoImage = null; _outerMask = null;
               }),
               child: Container(
-                width: 42,
-                height: 42,
+                width: 46, height: 46,
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.delete_outline,
-                  color: Colors.red.shade400,
-                  size: 20,
-                ),
+                  color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
               ),
             ),
           ],
+        ]),
+        if (_logoBytes != null) ...[
+          const SizedBox(height: 14),
+          _sliderRow("Tamaño", "${effLogo.toInt()}px",
+              _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
+          const SizedBox(height: 4),
+          _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
+              _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
+          const SizedBox(height: 6),
+          const Text("💡 Logo blanco → fondo oscuro",
+              style: TextStyle(fontSize: 11, color: Color(0xFFAAAAAA), fontStyle: FontStyle.italic)),
+        ],
+      ])),
+      const SizedBox(height: 8),
+    ],
+  );
+
+  // ── Shape panel ──────────────────────────────────────────────────
+  Widget _buildShapePanel() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionLabel("FORMA / SILUETA"),
+      _flatCard(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _actionTile(
+          icon: Icons.format_shapes,
+          label: _shapeBytes == null
+              ? "Cargar imagen de forma (PNG/JPG)"
+              : "✅ Forma cargada — Cambiar",
+          onTap: () async {
+            final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+            if (img != null) await _processShape(File(img.path));
+          },
         ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            const Text(
-              "Espacio QR / forma",
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        const SizedBox(height: 12),
+        if (_shapeBytes != null) ...[
+          Row(children: [
+            Expanded(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFF7F7F7),
+                  borderRadius: BorderRadius.circular(10)),
+              child: const Text("Silueta cargada como base del QR.",
+                  style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
+            )),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () => setState(() {
+                _shapeBytes = null; _shapeImage = null; _shapeMask = null;
+              }),
+              child: Container(
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                    color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                child: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          _sliderRow("Espacio QR / forma", "${_shapeGap.toStringAsFixed(1)} mód.",
+              _shapeGap, 0.0, 3.0, 12, (v) => setState(() => _shapeGap = v)),
+          const SizedBox(height: 4),
+          const Text("0.0 = casi pegado · más alto = más encapsulado",
+              style: TextStyle(
+                  fontSize: 11, color: Color(0xFFAAAAAA), fontStyle: FontStyle.italic)),
+        ] else
+          const Text("PNG transparente ideal; JPG también sirve.",
+              style: TextStyle(
+                  fontSize: 11, color: Color(0xFFAAAAAA), fontStyle: FontStyle.italic)),
+      ])),
+      const SizedBox(height: 8),
+    ],
+  );
+
+  // ── Fondo panel ──────────────────────────────────────────────────
+  Widget _buildFondoPanel() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionLabel("TIPO DE FONDO"),
+      _flatCard(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _dropdown(
+          value: _bgMode,
+          items: ["Blanco (Default)", "Transparente", "Sólido (Color)", "Degradado"],
+          onChanged: (v) => setState(() => _bgMode = v!),
+          label: "Fondo",
+        ),
+        if (_bgMode == "Sólido (Color)" || _bgMode == "Degradado") ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Text(
+              _bgMode == "Degradado" ? "Color inicio" : "Color fondo",
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444)),
             ),
             const Spacer(),
-            Text(
-              "${_shapeGap.toStringAsFixed(1)} mód.",
-              style: const TextStyle(fontSize: 12, color: Colors.black45),
+            _colorDot(_bgC1, (c) => setState(() => _bgC1 = c)),
+            if (_bgMode == "Degradado") ...[
+              const SizedBox(width: 14),
+              const Text("Color fin",
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF444444))),
+              const SizedBox(width: 8),
+              _colorDot(_bgC2, (c) => setState(() => _bgC2 = c)),
+            ],
+          ]),
+          if (_bgMode == "Degradado") ...[
+            const SizedBox(height: 8),
+            _dropdown(
+              value: _bgGradDir,
+              items: ["Vertical", "Horizontal", "Diagonal"],
+              onChanged: (v) => setState(() => _bgGradDir = v!),
+              label: "Dirección",
             ),
           ],
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 3,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-          ),
-          child: Slider(
-            value: _shapeGap,
-            min: 0.0,
-            max: 3.0,
-            divisions: 12,
-            activeColor: Colors.black,
-            inactiveColor: Colors.black12,
-            onChanged: (v) => setState(() => _shapeGap = v),
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(top: 2),
-          child: Text(
-            "0.0 = casi pegado · más alto = más encapsulado dentro de la forma",
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.black38,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
-      ] else
-        const Padding(
-          padding: EdgeInsets.only(top: 2),
-          child: Text(
-            "Usa una imagen con una silueta clara. PNG transparente ideal; JPG también sirve.",
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.black38,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
-    ],
-  ),
-);
-
-  // ── Color card Avanzado ──────────────────────────────────────────
-  Widget _colorCardAdv() => _card(Column(children: [
-    Row(children: [
-      Expanded(
-        child: _dropdown(
-          value: _qrColorMode,
-          items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"],
-          onChanged: (v) => setState(() => _qrColorMode = v!),
-        ),
-      ),
-    ]),
-    const SizedBox(height: 10),
-    Row(children: [
-      const Text("Color QR", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-      const Spacer(),
-      _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
-      if (_qrColorMode != "Sólido (Un Color)") ...[
-        const SizedBox(width: 8),
-        _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
-      ],
-    ]),
-    if (_qrColorMode == "Degradado Custom") ...[
-      const SizedBox(height: 8),
-      _dropdown(
-        value: _qrGradDir,
-        items: ["Vertical", "Horizontal", "Diagonal"],
-        onChanged: (v) => setState(() => _qrGradDir = v!),
-        label: "Dirección",
-      ),
-    ],
-  ]));
-
-  // ── Eyes card ────────────────────────────────────────────────────
-  Widget _eyesCard() => _card(Column(children: [
-    Row(children: [
-      const Text("Personalizar ojos",
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-      const Spacer(),
-      Switch.adaptive(
-        value: _customEyes,
-        activeColor: Colors.black,
-        onChanged: (v) => setState(() => _customEyes = v),
-      ),
-    ]),
-    if (_customEyes) ...[
-      const SizedBox(height: 8),
-      Row(children: [
-        const Text("Exterior", style: TextStyle(fontSize: 13)),
-        const Spacer(),
-        _colorDot(_eyeExt, (c) => setState(() => _eyeExt = c)),
-        const SizedBox(width: 16),
-        const Text("Interior", style: TextStyle(fontSize: 13)),
-        const SizedBox(width: 8),
-        _colorDot(_eyeInt, (c) => setState(() => _eyeInt = c)),
-      ]),
-    ],
-  ]));
-
-  // ── BG card ──────────────────────────────────────────────────────
-  Widget _bgCard(bool isAdv) => _card(Column(children: [
-    _dropdown(
-      value: isAdv ? _bgMode : (_bgMode == "Degradado" ? "Blanco (Default)" : _bgMode),
-      items: isAdv
-          ? ["Blanco (Default)", "Transparente", "Sólido (Color)", "Degradado"]
-          : ["Blanco (Default)", "Transparente", "Sólido (Color)"],
-      onChanged: (v) => setState(() => _bgMode = v!),
-      label: "Fondo",
-    ),
-    if (_bgMode == "Sólido (Color)" || _bgMode == "Degradado") ...[
-      const SizedBox(height: 10),
-      Row(children: [
-        const Text("Color fondo", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-        const Spacer(),
-        _colorDot(_bgC1, (c) => setState(() => _bgC1 = c)),
-        if (_bgMode == "Degradado") ...[
-          const SizedBox(width: 8),
-          _colorDot(_bgC2, (c) => setState(() => _bgC2 = c)),
         ],
-      ]),
-      if (_bgMode == "Degradado") ...[
-        const SizedBox(height: 8),
-        _dropdown(
-          value: _bgGradDir,
-          items: ["Vertical", "Horizontal", "Diagonal"],
-          onChanged: (v) => setState(() => _bgGradDir = v!),
-          label: "Dirección",
-        ),
-      ],
+      ])),
+      const SizedBox(height: 8),
     ],
-  ]));
-
-  // ── Options bottom sheet ─────────────────────────────────────────
-  void _showOptionsSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Opciones rápidas",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 16),
-            Row(children: [
-              const Text("Color QR", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              _colorDot(_qrC1, (c) { setState(() => _qrC1 = c); Navigator.pop(context); }),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              const Text("Modo color", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              _dropdown(
-                value: _qrColorMode,
-                items: ["Automático (Logo)", "Sólido (Un Color)", "Degradado Custom"],
-                onChanged: (v) => setState(() => _qrColorMode = v!),
-              ),
-            ]),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── QR Preview panel ─────────────────────────────────────────────
-  Widget _buildQrPreviewPanel(String data, bool isEmpty, String estilo, bool isAdv, double effLogo) {
-    final isShape = estilo == "Formas (Máscara)";
-    final shapeReady = _shapeMask != null && _shapeMask!.isNotEmpty;
-    final isAdvStyle = isAdv && (estilo == "Split Liquid (Mitades)" || isShape);
-
-    final bgColor = _bgMode == "Transparente"
-        ? Colors.grey.shade100
-        : _bgMode == "Sólido (Color)" ? _bgC1 : Colors.white;
-    final bgGrad = _bgMode == "Degradado" ? _getGrad(_bgC1, _bgC2, _bgGradDir) : null;
-
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Row(
-        children: [
-          // QR Preview — solo visual, no se usa para exportar
-          RepaintBoundary(
-            key: _qrKey,
-            child: Container(
-              width: 130, height: 130,
-              decoration: BoxDecoration(
-                color: bgGrad == null ? bgColor : null,
-                gradient: bgGrad,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10, offset: const Offset(0, 3))],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Center(
-                  child: isEmpty
-                      ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.qr_code_2, size: 36, color: Colors.black12),
-                          const SizedBox(height: 4),
-                          const Text("Escribe\nalgo...",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.black26, fontSize: 10)),
-                        ])
-                      : (isShape && !shapeReady)
-                          ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                              const Icon(Icons.format_shapes, size: 32, color: Colors.black26),
-                              const SizedBox(height: 4),
-                              const Text("Elige\nforma",
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.black26, fontSize: 10)),
-                            ])
-                          
-: FutureBuilder<Uint8List>(
-    future: _renderPreviewPng(),
-    builder: (context, snap) {
-      if (snap.connectionState != ConnectionState.done ||
-          !snap.hasData) {
-        return const SizedBox(
-          width: 120,
-          height: 120,
-          child: Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.black26,
-              ),
-            ),
-          ),
-        );
-      }
-
-      return Padding(
-        padding: const EdgeInsets.all(5),
-        child: Image.memory(
-          snap.data!,
-          width: 120,
-          height: 120,
-          fit: BoxFit.contain,
-          gaplessPlayback: true,
-          filterQuality: FilterQuality.high,
-        ),
-      );
-    },
-  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Info + quick type
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Vista previa",
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                        color: Colors.black38, letterSpacing: 0.8)),
-                const SizedBox(height: 4),
-                Text(
-                  isEmpty ? "Sin contenido" : _getFinalData().length > 40
-                      ? "${_getFinalData().substring(0, 40)}..." : _getFinalData(),
-                  style: const TextStyle(fontSize: 12, color: Colors.black54),
-                  maxLines: 2, overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 10),
-                _dropdown(
-                  value: _qrType,
-                  items: ["Sitio Web (URL)", "WhatsApp", "Red WiFi",
-                      "VCard (Contacto)", "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre"],
-                  onChanged: (v) => setState(() => _qrType = v!),
-                  compact: true,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  );
 
   // ── Bottom bar ───────────────────────────────────────────────────
-Widget _buildBottomBar(bool isEmpty) => Container(
-  color: Colors.white,
-  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-  child: Row(
-    children: [
-      Expanded(
-        child: _bigBtn(
-          "GUARDAR",
-          Icons.save_alt,
-          isEmpty
-              ? null
-              : () async {
-                  HapticFeedback.heavyImpact();
-                  await _guardarImagen();
-                },
-        ),
-      ),
+  Widget _buildBottomBar(bool isEmpty) => Container(
+    color: Colors.white,
+    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+    child: Row(children: [
+      Expanded(child: _bigBtn(
+        "GUARDAR", Icons.save_alt,
+        isEmpty ? null : () async {
+          HapticFeedback.heavyImpact();
+          await _guardarImagen();
+        },
+      )),
       const SizedBox(width: 10),
-      Expanded(
-        child: _bigBtn(
-          "COMPARTIR",
-          Icons.share_outlined,
-          isEmpty
-              ? null
-              : () async {
-                  HapticFeedback.heavyImpact();
-                  await _mostrarSelectorCompartir();
-                },
-          outlined: true,
-        ),
-      ),
-    ],
-  ),
-);
+      Expanded(child: _bigBtn(
+        "COMPARTIR", Icons.share_outlined,
+        isEmpty ? null : () async {
+          HapticFeedback.heavyImpact();
+          await _mostrarSelectorCompartir();
+        },
+        outlined: true,
+      )),
+    ]),
+  );
 
   Widget _bigBtn(String label, IconData icon, VoidCallback? onTap, {bool outlined = false}) {
     final enabled = onTap != null;
@@ -1235,40 +974,186 @@ Widget _buildBottomBar(bool isEmpty) => Container(
         height: 50,
         decoration: BoxDecoration(
           color: outlined
-              ? (enabled ? Colors.white : Colors.grey.shade100)
-              : (enabled ? Colors.black : Colors.grey.shade200),
-          borderRadius: BorderRadius.circular(14),
-          border: outlined ? Border.all(
-              color: enabled ? Colors.black : Colors.grey.shade300, width: 2) : null,
+              ? (enabled ? Colors.white : const Color(0xFFF5F5F5))
+              : (enabled ? const Color(0xFF111111) : const Color(0xFFDDDDDD)),
+          borderRadius: BorderRadius.circular(13),
+          border: outlined
+              ? Border.all(
+                  color: enabled ? const Color(0xFF111111) : const Color(0xFFDDDDDD),
+                  width: 1.5)
+              : null,
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 18,
+          Icon(icon, size: 17,
               color: outlined
-                  ? (enabled ? Colors.black : Colors.grey)
-                  : (enabled ? Colors.white : Colors.grey)),
-          const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w700,
-                  color: outlined
-                      ? (enabled ? Colors.black : Colors.grey)
-                      : (enabled ? Colors.white : Colors.grey))),
+                  ? (enabled ? const Color(0xFF111111) : const Color(0xFFBBBBBB))
+                  : (enabled ? Colors.white : const Color(0xFFAAAAAA))),
+          const SizedBox(width: 7),
+          Text(label, style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5,
+            color: outlined
+                ? (enabled ? const Color(0xFF111111) : const Color(0xFFBBBBBB))
+                : (enabled ? Colors.white : const Color(0xFFAAAAAA)),
+          )),
         ]),
       ),
     );
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
-  Widget _card(Widget child) => Container(
+
+  Widget _flatCard(Widget child) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(14),
-    margin: const EdgeInsets.only(bottom: 0),
     decoration: BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
     ),
     child: child,
   );
+
+  Widget _flatStyleGrid(List<String> styles, String selected, Function(String) onSelect) {
+    final Color previewC2 = _qrColorMode == "Sólido (Un Color)" ? _qrC1 : _qrC2;
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 0.82,
+      ),
+      itemCount: styles.length,
+      itemBuilder: (ctx, i) {
+        final style = styles[i];
+        final sel = style == selected;
+        return GestureDetector(
+          onTap: () { HapticFeedback.selectionClick(); onSelect(style); },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              color: sel ? const Color(0xFF111111) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: sel ? const Color(0xFF111111) : const Color(0xFFEEEEEE),
+                width: 1.5,
+              ),
+            ),
+            child: Column(children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                  child: Container(
+                    color: sel ? const Color(0xFF222222) : const Color(0xFFF8F8F8),
+                    child: CustomPaint(
+                      painter: StylePreviewPainter(
+                        style: style,
+                        c1: sel ? Colors.white : _qrC1,
+                        c2: sel ? const Color(0xFFCCCCCC) : previewC2,
+                        shapeSubStyle: style.contains("Formas") ? _mapSubStyle : null,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Text(
+                  _shortName(style),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 9, fontWeight: FontWeight.w700,
+                    color: sel ? Colors.white : const Color(0xFF999999),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionLabel(String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(label,
+        style: const TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w700,
+            color: Color(0xFFAAAAAA), letterSpacing: 1.2)),
+  );
+
+  String _shortName(String s) {
+    if (s.contains("Gusano")) return "Liquid";
+    if (s.contains("Cuadrado")) return "Normal";
+    if (s.contains("Barras")) return "Barras";
+    if (s.contains("Puntos")) return "Círculos";
+    if (s.contains("Rombos")) return "Diamantes";
+    if (s.contains("Split")) return "Split";
+    if (s.contains("Formas")) return "Formas";
+    return s;
+  }
+
+  Widget _subStyleRow(String current, Function(String) onSelect) =>
+      _chipsRow(_shapeSubStyles.map(_shortName).toList(),
+          _shortName(current),
+          (v) => onSelect(_shapeSubStyles.firstWhere((s) => _shortName(s) == v)));
+
+  Widget _chipsRow(List<String> items, String selected, Function(String) onSelect) =>
+      SizedBox(
+        height: 36,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 7),
+          itemBuilder: (_, i) {
+            final item = items[i];
+            final sel = item == selected;
+            return GestureDetector(
+              onTap: () { HapticFeedback.selectionClick(); onSelect(item); },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: sel ? const Color(0xFF111111) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: sel ? const Color(0xFF111111) : const Color(0xFFDDDDDD),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(item, style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600,
+                  color: sel ? Colors.white : const Color(0xFF666666),
+                )),
+              ),
+            );
+          },
+        ),
+      );
+
+  Widget _sliderRow(String label, String valueStr, double value, double min, double max,
+      int divisions, Function(double) onChanged) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(label, style: const TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+          const Spacer(),
+          Text(valueStr, style: const TextStyle(fontSize: 12, color: Color(0xFFAAAAAA))),
+        ]),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 2,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+          ),
+          child: Slider(
+            value: value, min: min, max: max, divisions: divisions,
+            activeColor: const Color(0xFF111111),
+            inactiveColor: const Color(0xFFEEEEEE),
+            onChanged: onChanged,
+          ),
+        ),
+      ]);
 
   Widget _actionTile({required IconData icon, required String label, required VoidCallback onTap}) =>
       GestureDetector(
@@ -1276,8 +1161,8 @@ Widget _buildBottomBar(bool isEmpty) => Container(
         child: Container(
           height: 46,
           decoration: BoxDecoration(
-            color: const Color(0xFFF0F0F0),
-            borderRadius: BorderRadius.circular(12),
+            color: const Color(0xFFF2F2F2),
+            borderRadius: BorderRadius.circular(11),
           ),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(icon, size: 18, color: Colors.black87),
@@ -1298,19 +1183,29 @@ Widget _buildBottomBar(bool isEmpty) => Container(
         value: value,
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(fontSize: 12),
-          border: compact ? OutlineInputBorder(
+          labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
+          border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Colors.black12),
-          ) : InputBorder.none,
-          contentPadding: compact
-              ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
-              : EdgeInsets.zero,
+            borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF111111), width: 1.5),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           isDense: true,
+          filled: true,
+          fillColor: Colors.white,
         ),
-        style: TextStyle(fontSize: compact ? 12 : 14, color: Colors.black, fontWeight: FontWeight.w500),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-        items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 13)))).toList(),
+        style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
+        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFF888888)),
+        dropdownColor: Colors.white,
+        items: items.map((e) => DropdownMenuItem(
+            value: e, child: Text(e, style: const TextStyle(fontSize: 13)))).toList(),
         onChanged: onChanged,
       );
 
@@ -1321,11 +1216,13 @@ Widget _buildBottomBar(bool isEmpty) => Container(
       case "WhatsApp":
         return Column(children: [
           _field(_c1, "+595981000000", type: TextInputType.phone),
+          const SizedBox(height: 8),
           _field(_c2, "Mensaje (opcional)"),
         ]);
       case "Red WiFi":
         return Column(children: [
           _field(_c1, "Nombre de la red"),
+          const SizedBox(height: 8),
           _field(_c2, "Contraseña", obscure: true),
         ]);
       case "VCard (Contacto)":
@@ -1335,8 +1232,11 @@ Widget _buildBottomBar(bool isEmpty) => Container(
             const SizedBox(width: 8),
             Expanded(child: _field(_c2, "Apellido")),
           ]),
+          const SizedBox(height: 8),
           _field(_c3, "Empresa"),
+          const SizedBox(height: 8),
           _field(_c4, "Teléfono", type: TextInputType.phone),
+          const SizedBox(height: 8),
           _field(_c5, "Email", type: TextInputType.emailAddress),
         ]);
       case "Teléfono":
@@ -1344,12 +1244,15 @@ Widget _buildBottomBar(bool isEmpty) => Container(
       case "E-mail":
         return Column(children: [
           _field(_c1, "correo@ejemplo.com", type: TextInputType.emailAddress),
+          const SizedBox(height: 8),
           _field(_c2, "Asunto"),
+          const SizedBox(height: 8),
           _field(_c3, "Mensaje"),
         ]);
       case "SMS (Mensaje)":
         return Column(children: [
           _field(_c1, "+595981000000", type: TextInputType.phone),
+          const SizedBox(height: 8),
           _field(_c2, "Texto del SMS"),
         ]);
       default:
@@ -1363,57 +1266,52 @@ Widget _buildBottomBar(bool isEmpty) => Container(
         controller: c,
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Colors.black26, fontSize: 13),
+          hintStyle: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Colors.black12),
+            borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Colors.black12),
+            borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Colors.black, width: 1.5),
+            borderSide: const BorderSide(color: Color(0xFF111111), width: 1.5),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           isDense: true,
+          filled: true,
+          fillColor: Colors.white,
         ),
-        style: const TextStyle(fontSize: 13),
+        style: const TextStyle(fontSize: 13, color: Color(0xFF222222)),
         keyboardType: type,
         obscureText: obscure,
         maxLines: maxLines,
         onChanged: (_) => setState(() {}),
       );
 
-  Widget _typeDropdown() => _dropdown(
-    value: _qrType,
-    items: ["Sitio Web (URL)", "WhatsApp", "Red WiFi", "VCard (Contacto)",
-        "Teléfono", "E-mail", "SMS (Mensaje)", "Texto Libre"],
-    onChanged: (v) => setState(() => _qrType = v!),
-    label: "Tipo de QR",
-  );
-
   Widget _colorDot(Color cur, Function(Color) onTap) => GestureDetector(
     onTap: () => _palette(onTap),
     child: Container(
-      width: 36, height: 36,
+      width: 34, height: 34,
       decoration: BoxDecoration(
         color: cur, shape: BoxShape.circle,
-        border: Border.all(color: Colors.black12, width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
+        border: Border.all(color: const Color(0xFFE0E0E0), width: 1.5),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4)],
       ),
-      child: Icon(Icons.colorize, size: 14,
-          color: cur.computeLuminance() > 0.5 ? Colors.black54 : Colors.white70),
+      child: Icon(Icons.colorize, size: 13,
+          color: cur.computeLuminance() > 0.5 ? Colors.black38 : Colors.white60),
     ),
   );
 
   void _palette(Function(Color) onSel) => showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       backgroundColor: Colors.white,
-      title: const Text("Color", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+      title: const Text("Seleccionar color",
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
       content: Wrap(
         spacing: 10, runSpacing: 10,
         children: [
@@ -1422,13 +1320,17 @@ Widget _buildBottomBar(bool isEmpty) => Container(
           Colors.purple, Colors.teal, const Color(0xFFE91E63),
           const Color(0xFF00BCD4), Colors.brown, Colors.grey.shade600,
         ].map((c) => GestureDetector(
-          onTap: () { HapticFeedback.selectionClick(); onSel(c); Navigator.pop(ctx); setState(() {}); },
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onSel(c);
+            Navigator.pop(ctx);
+            setState(() {});
+          },
           child: Container(
-            width: 44, height: 44,
+            width: 42, height: 42,
             decoration: BoxDecoration(
               color: c, shape: BoxShape.circle,
               border: Border.all(color: Colors.black12),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
             ),
           ),
         )).toList(),
