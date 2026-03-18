@@ -853,12 +853,30 @@ String _splitDir = "Vertical";
                             style: TextStyle(fontSize: 10, color: Color(0xFFCCCCCC))),
                       ])
                     : (isShape && !shapeReady)
-                        ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            const Icon(Icons.format_shapes, size: 34, color: Color(0xFFDDDDDD)),
-                            const SizedBox(height: 5),
-                            const Text("Carga la forma (Paso 2)",
-                                style: TextStyle(fontSize: 10, color: Color(0xFFCCCCCC))),
-                          ])
+                        ? GestureDetector(
+                            onTap: () async {
+                              HapticFeedback.lightImpact();
+                              final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+                              if (img != null) await _processShape(File(img.path));
+                            },
+                            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Container(
+                                width: 54, height: 54,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF111111),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Icon(Icons.upload_rounded, size: 26, color: Colors.white),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text("Cargar figura / forma",
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                                      color: Color(0xFF333333))),
+                              const SizedBox(height: 2),
+                              const Text("PNG transparente · JPG",
+                                  style: TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
+                            ]),
+                          )
                         : FutureBuilder<Uint8List>(
                             future: _renderPreviewPng(),
                             builder: (ctx, snap) {
@@ -1013,6 +1031,7 @@ String _splitDir = "Vertical";
                   child: Container(
                     color: sel ? const Color(0xFF222222) : const Color(0xFFF8F8F8),
                     child: CustomPaint(
+                      size: const Size(double.infinity, double.infinity),
                       painter: StylePreviewPainter(
                         style: s,
                         c1: sel ? Colors.white : Colors.black,
@@ -1155,49 +1174,62 @@ String _splitDir = "Vertical";
             },
             child: Padding(
               padding: const EdgeInsets.all(14),
-              child: Row(children: [
-                Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2F2F2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: _logoBytes != null
-                      ? ClipRRect(
+              child: _logoBytes != null
+                  // Logo cargado: imagen grande centrada + controles debajo
+                  ? Column(children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: double.infinity,
+                          height: 130,
+                          color: const Color(0xFFF2F2F2),
+                          child: Image.memory(_logoBytes!, fit: BoxFit.contain),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        const Icon(Icons.check_circle, size: 15, color: Color(0xFF22AA66)),
+                        const SizedBox(width: 6),
+                        const Expanded(child: Text("Logo cargado · toca para cambiar",
+                            style: TextStyle(fontSize: 12, color: Color(0xFF666666)))),
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            _logoBytes = null; _logoImage = null; _outerMask = null;
+                          }),
+                          child: Container(
+                            width: 30, height: 30,
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8)),
+                            child: Icon(Icons.close, size: 15, color: Colors.red.shade400),
+                          ),
+                        ),
+                      ]),
+                    ])
+                  // Sin logo: tile simple
+                  : Row(children: [
+                      Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2F2F2),
                           borderRadius: BorderRadius.circular(10),
-                          child: Image.memory(_logoBytes!, fit: BoxFit.cover))
-                      : const Icon(Icons.image_outlined, size: 20,
-                          color: Color(0xFF888888)),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _logoBytes != null ? "✅ Logo cargado" : "Cargar logo",
-                      style: const TextStyle(fontSize: 14,
-                          fontWeight: FontWeight.w600, color: Color(0xFF222222)),
-                    ),
-                    Text(
-                      _logoBytes != null ? "Toca para cambiar" : "PNG o JPG",
-                      style: const TextStyle(fontSize: 11, color: Color(0xFFAAAAAA)),
-                    ),
-                  ],
-                )),
-                if (_logoBytes != null)
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _logoBytes = null; _logoImage = null; _outerMask = null;
-                    }),
-                    child: Container(
-                      width: 32, height: 32,
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8)),
-                      child: Icon(Icons.close, size: 16, color: Colors.red.shade400),
-                    ),
-                  ),
-              ]),
+                        ),
+                        child: const Icon(Icons.image_outlined, size: 20,
+                            color: Color(0xFF888888)),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Cargar logo", style: TextStyle(fontSize: 14,
+                              fontWeight: FontWeight.w600, color: Color(0xFF222222))),
+                          Text("PNG o JPG",
+                              style: TextStyle(fontSize: 11, color: Color(0xFFAAAAAA))),
+                        ],
+                      )),
+                      const Icon(Icons.arrow_forward_ios_rounded, size: 13,
+                          color: Color(0xFFCCCCCC)),
+                    ]),
             ),
           ),
           if (_logoBytes != null) ...[
