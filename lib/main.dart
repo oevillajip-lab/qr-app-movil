@@ -1077,50 +1077,73 @@ String _splitDir = "Vertical";
           (v) => setState(() => _mapSubStyle =
               _shapeSubStyles.firstWhere((s) => _shortName(s) == v)),
         ),
+        const SizedBox(height: 14),
+        _label("ESPACIO QR / FORMA"),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(12)),
+          child: _sliderRow(
+            "Separación", "${_shapeGap.toStringAsFixed(1)} mód.",
+            _shapeGap, 0.0, 3.0, 12, (v) => setState(() => _shapeGap = v),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text("0.0 = pegado a los bordes · 3.0 = más encapsulado",
+            style: TextStyle(fontSize: 10, color: Color(0xFFAAAAAA),
+                fontStyle: FontStyle.italic)),
       ],
     ]);
   }
 
   // ── Tab Color ─────────────────────────────────────────────────────
-  Widget _buildColorTab() => Column(
+  Widget _buildColorTab() {
+    final isShape = _estiloAvz == "Formas (Máscara)";
+    final autoLabel = isShape ? "Auto (Forma)" : "Auto (Logo)";
+    final isAuto = _qrColorMode.contains("Auto");
+    final isSolido = _qrColorMode == "Sólido (Un Color)";
+    final isDegradado = _qrColorMode == "Degradado Custom";
+
+    return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       _label("MODO DE COLOR"),
       _chipsRow(
-        ["Auto (Logo)", "Sólido", "Degradado"],
-        _qrColorMode.contains("Auto") ? "Auto (Logo)"
-            : _qrColorMode.contains("Sólido") ? "Sólido" : "Degradado",
+        [autoLabel, "Sólido", "Degradado"],
+        isAuto ? autoLabel : isSolido ? "Sólido" : "Degradado",
         (v) => setState(() {
-          if (v == "Auto (Logo)") _qrColorMode = "Automático (Logo)";
+          if (v == autoLabel) _qrColorMode = "Automático (Logo)";
           else if (v == "Sólido") _qrColorMode = "Sólido (Un Color)";
           else _qrColorMode = "Degradado Custom";
         }),
       ),
-      const SizedBox(height: 14),
-      _label("COLORES DEL QR"),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12)),
-        child: Row(children: [
-          const Text("Color 1", style: TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
-          const SizedBox(width: 10),
-          _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
-          if (_qrColorMode != "Sólido (Un Color)") ...[
-            const SizedBox(width: 20),
-            const Text("Color 2", style: TextStyle(
+      if (!isAuto) ...[
+        const SizedBox(height: 14),
+        _label("COLORES DEL QR"),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            const Text("Color 1", style: TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
             const SizedBox(width: 10),
-            _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
-          ],
-        ]),
-      ),
-      if (_qrColorMode == "Degradado Custom") ...[
-        const SizedBox(height: 10),
-        _label("DIRECCIÓN DEL DEGRADADO"),
-        _chipsRow(["Vertical", "Horizontal", "Diagonal"], _qrGradDir,
-            (v) => setState(() => _qrGradDir = v)),
+            _colorDot(_qrC1, (c) => setState(() => _qrC1 = c)),
+            if (isDegradado) ...[
+              const SizedBox(width: 20),
+              const Text("Color 2", style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+              const SizedBox(width: 10),
+              _colorDot(_qrC2, (c) => setState(() => _qrC2 = c)),
+            ],
+          ]),
+        ),
+        if (isDegradado) ...[
+          const SizedBox(height: 10),
+          _label("DIRECCIÓN DEL DEGRADADO"),
+          _chipsRow(["Vertical", "Horizontal", "Diagonal"], _qrGradDir,
+              (v) => setState(() => _qrGradDir = v)),
+        ],
       ],
       const SizedBox(height: 14),
       _label("OJOS DEL QR"),
@@ -1156,6 +1179,7 @@ String _splitDir = "Vertical";
       ),
     ],
   );
+  }
 
   // ── Tab Logo ──────────────────────────────────────────────────────
   Widget _buildLogoTab(double effLogo) => Column(
@@ -2341,14 +2365,7 @@ class StylePreviewPainter extends CustomPainter {
       return;
     }
 
-    const frac = 0.30;
-    const s0 = (1.0 - frac) / 2.0;
-    const s1 = s0 + frac;
-    bool inCenter(int r, int c) {
-      final nx = (c + 0.5) / m;
-      final ny = (r + 0.5) / m;
-      return nx >= s0 && nx <= s1 && ny >= s0 && ny <= s1;
-    }
+    bool inCenter(int r, int c) => false; // preview pleno, sin hueco de logo
     bool isEye(int r, int c) => (r < 7 && c < 7) || (r < 7 && c >= m - 7) || (r >= m - 7 && c < 7);
     final lPath = Path();
     final lPaint = Paint()..isAntiAlias = true..style = PaintingStyle.stroke
