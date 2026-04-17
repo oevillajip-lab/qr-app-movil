@@ -41,12 +41,8 @@ jobs:
           # Si existen secretos, firma siempre con la misma clave para permitir actualización sobre la app ya instalada
           if [ -n "$KEYSTORE_B64" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ] && [ -n "$STORE_PASSWORD" ]; then
             echo "$KEYSTORE_B64" | base64 --decode > android/app/upload-keystore.jks
-            cat > android/key.properties <<EOF
-storePassword=$STORE_PASSWORD
-keyPassword=$KEY_PASSWORD
-keyAlias=$KEY_ALIAS
-storeFile=app/upload-keystore.jks
-EOF
+            printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
+              "$STORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" 'app/upload-keystore.jks' > android/key.properties
             echo "Using stable Android signing key"
           else
             echo "No signing secrets found; package id will stay stable, but updates over previous installs may fail if signatures differ."
