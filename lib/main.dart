@@ -244,9 +244,23 @@ String _splitDir = "Vertical";
     if (data.isEmpty) return _logoSize;
     final qr = _buildQrImage(data);
     if (qr == null) return _logoSize;
-    final maxPx = math.max(30.0,
-        _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize));
-    return _logoSize.clamp(30.0, maxPx);
+
+    final baseMax = math.max(
+      30.0,
+      _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize),
+    );
+    final baseSize = _logoSize.clamp(30.0, baseMax);
+
+    if (_logoImage == null) return baseSize;
+
+    final w = _logoImage!.width.toDouble();
+    final h = _logoImage!.height.toDouble();
+    final ratio = math.max(w / h, h / w);
+
+    // Boost moderado para logos muy alargados, sin exceder limites seguros.
+    final boost = (1.0 + (math.min(ratio, 4.0) - 1.0) * 0.18).clamp(1.0, 1.35);
+    final boostedMax = (baseMax * boost).clamp(30.0, 110.0);
+    return (baseSize * boost).clamp(30.0, boostedMax);
   }
 
   Future<void> _processLogo(File file) async {
