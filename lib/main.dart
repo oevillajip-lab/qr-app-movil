@@ -1920,15 +1920,24 @@ String _buildSvg() {
 
     // ── Logo encima (dentro del área QR) ────────────────────────────
     if (_logoBytes != null && !isShape) {
-      final codec = await ui.instantiateImageCodec(
-        _logoBytes!,
-        targetWidth: effLogo.toInt(),
-        targetHeight: effLogo.toInt(),
-      );
+      final codec = await ui.instantiateImageCodec(_logoBytes!);
       final frame = await codec.getNextFrame();
-      canvas.drawImage(
+      final srcSize = Size(
+        frame.image.width.toDouble(),
+        frame.image.height.toDouble(),
+      );
+      final fitted = applyBoxFit(BoxFit.contain, srcSize, Size(effLogo, effLogo));
+      final logoRect = Rect.fromLTWH(
+        (qrSize - effLogo) / 2,
+        (qrSize - effLogo) / 2,
+        effLogo,
+        effLogo,
+      );
+      final dstRect = Alignment.center.inscribe(fitted.destination, logoRect);
+      canvas.drawImageRect(
         frame.image,
-        Offset((qrSize - effLogo) / 2, (qrSize - effLogo) / 2),
+        Offset.zero & srcSize,
+        dstRect,
         Paint()..isAntiAlias = true,
       );
     }
@@ -1994,15 +2003,24 @@ Future<Uint8List> _renderPreviewPng() async {
   }
 
   if (_logoBytes != null && !isShape) {
-    final codec = await ui.instantiateImageCodec(
-      _logoBytes!,
-      targetWidth: effLogo.toInt(),
-      targetHeight: effLogo.toInt(),
-    );
+    final codec = await ui.instantiateImageCodec(_logoBytes!);
     final frame = await codec.getNextFrame();
-    canvas.drawImage(
+    final srcSize = Size(
+      frame.image.width.toDouble(),
+      frame.image.height.toDouble(),
+    );
+    final fitted = applyBoxFit(BoxFit.contain, srcSize, Size(effLogo, effLogo));
+    final logoRect = Rect.fromLTWH(
+      (qrSize - effLogo) / 2,
+      (qrSize - effLogo) / 2,
+      effLogo,
+      effLogo,
+    );
+    final dstRect = Alignment.center.inscribe(fitted.destination, logoRect);
+    canvas.drawImageRect(
       frame.image,
-      Offset((qrSize - effLogo) / 2, (qrSize - effLogo) / 2),
+      Offset.zero & srcSize,
+      dstRect,
       Paint()..isAntiAlias = true,
     );
   }
