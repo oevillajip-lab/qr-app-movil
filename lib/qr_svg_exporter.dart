@@ -790,8 +790,19 @@ class QrSvgExporter {
     final int h = outerMask.length;
     final int w = outerMask.first.length;
     final double lf = logoSizeFrac;
-    final double ls = (1 - lf) / 2.0;
-    final double le = ls + lf;
+    final double maskW = w.toDouble();
+    final double maskH = h.toDouble();
+    double drawW = lf;
+    double drawH = lf;
+    if (maskW > maskH) {
+      drawH = lf * (maskH / maskW);
+    } else if (maskH > maskW) {
+      drawW = lf * (maskW / maskH);
+    }
+    final double lsX = 0.5 - drawW / 2.0;
+    final double leX = lsX + drawW;
+    final double lsY = 0.5 - drawH / 2.0;
+    final double leY = lsY + drawH;
     final base = List.generate(m, (_) => List.filled(m, false));
     const samples = [0.2, 0.5, 0.8];
     for (int r = 0; r < m; r++) {
@@ -801,9 +812,13 @@ class QrSvgExporter {
           for (final dx in samples) {
             final double nx = (c + dx) / m;
             final double ny = (r + dy) / m;
-            if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
-              final int px = (((nx - ls) / lf) * w).clamp(0.0, w - 1.0).toInt();
-              final int py = (((ny - ls) / lf) * h).clamp(0.0, h - 1.0).toInt();
+            if (nx >= lsX && nx <= leX && ny >= lsY && ny <= leY) {
+              final int px = (((nx - lsX) / drawW) * w)
+                  .clamp(0.0, w - 1.0)
+                  .toInt();
+              final int py = (((ny - lsY) / drawH) * h)
+                  .clamp(0.0, h - 1.0)
+                  .toInt();
               if (outerMask[py][px]) {
                 hit = true;
                 break;

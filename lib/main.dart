@@ -2512,17 +2512,34 @@ class QrMasterPainter extends CustomPainter {
       paint.shader = grad;
     } else { paint.color = qrC1; }
     final excl = List.generate(m, (_) => List.filled(m, false));
-    if (logoImage != null && outerMask != null) {
-      final lf = effLogo / 270.0; final ls = (1 - lf) / 2.0; final le = ls + lf;
+      if (logoImage != null && outerMask != null) {
+        final lf = effLogo / 270.0;
+        final imgW = logoImage!.width.toDouble();
+        final imgH = logoImage!.height.toDouble();
+        double drawW = lf;
+        double drawH = lf;
+        if (imgW > imgH) {
+          drawH = lf * (imgH / imgW);
+        } else if (imgH > imgW) {
+          drawW = lf * (imgW / imgH);
+        }
+        final lsX = 0.5 - drawW / 2.0;
+        final leX = lsX + drawW;
+        final lsY = 0.5 - drawH / 2.0;
+        final leY = lsY + drawH;
       final base = List.generate(m, (_) => List.filled(m, false));
       for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
         bool hit = false;
         for (double dy = 0.2; dy <= 0.8 && !hit; dy += 0.3)
           for (double dx = 0.2; dx <= 0.8 && !hit; dx += 0.3) {
             final nx = (c + dx) / m; final ny = (r + dy) / m;
-            if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
-              final px = ((nx - ls) / lf * logoImage!.width).clamp(0, logoImage!.width - 1).toInt();
-              final py = ((ny - ls) / lf * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
+              if (nx >= lsX && nx <= leX && ny >= lsY && ny <= leY) {
+                final px = ((nx - lsX) / drawW * logoImage!.width)
+                    .clamp(0, logoImage!.width - 1)
+                    .toInt();
+                final py = ((ny - lsY) / drawH * logoImage!.height)
+                    .clamp(0, logoImage!.height - 1)
+                    .toInt();
               if (outerMask![py][px]) hit = true;
             }
           }
@@ -2676,16 +2693,32 @@ class QrAdvancedPainter extends CustomPainter {
     // Use 270.0 as fixed reference — same denominator as QrMasterPainter — so
     // the exclusion zone is identical regardless of canvas size or painter used.
     final lf = effLogo / 270.0;
-    final ls = (1 - lf) / 2.0; final le = ls + lf;
+    final imgW = logoImage!.width.toDouble();
+    final imgH = logoImage!.height.toDouble();
+    double drawW = lf;
+    double drawH = lf;
+    if (imgW > imgH) {
+      drawH = lf * (imgH / imgW);
+    } else if (imgH > imgW) {
+      drawW = lf * (imgW / imgH);
+    }
+    final lsX = 0.5 - drawW / 2.0;
+    final leX = lsX + drawW;
+    final lsY = 0.5 - drawH / 2.0;
+    final leY = lsY + drawH;
     final base = List.generate(m, (_) => List.filled(m, false));
     for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
       bool hit = false;
       for (double dy = 0.2; dy <= 0.8 && !hit; dy += 0.3)
         for (double dx = 0.2; dx <= 0.8 && !hit; dx += 0.3) {
           final nx = (c + dx) / m; final ny = (r + dy) / m;
-          if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
-            final px = ((nx - ls) / lf * logoImage!.width).clamp(0, logoImage!.width - 1).toInt();
-            final py = ((ny - ls) / lf * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
+          if (nx >= lsX && nx <= leX && ny >= lsY && ny <= leY) {
+            final px = ((nx - lsX) / drawW * logoImage!.width)
+                .clamp(0, logoImage!.width - 1)
+                .toInt();
+            final py = ((ny - lsY) / drawH * logoImage!.height)
+                .clamp(0, logoImage!.height - 1)
+                .toInt();
             if (outerMask![py][px]) hit = true;
           }
         }
