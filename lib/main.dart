@@ -2512,7 +2512,7 @@ class QrMasterPainter extends CustomPainter {
     if (qr == null) { _err(canvas, size); return; }
     final int m = qr.moduleCount;
     final double t = size.width / m;
-    final double effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
+    final double effLogo = logoSize;
     final paint = Paint()..isAntiAlias = true;
     ui.Shader? grad;
     if (qrMode != "Sólido (Un Color)") {
@@ -2703,7 +2703,7 @@ class QrAdvancedPainter extends CustomPainter {
   List<List<bool>> _buildLogoExcl(int m, double t) {
     final excl = List.generate(m, (_) => List.filled(m, false));
     if (logoImage == null || outerMask == null || logoSize <= 0) return excl;
-    final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
+    final effLogo = logoSize;
     // Use 270.0 as fixed reference — same denominator as QrMasterPainter — so
     // the exclusion zone is identical regardless of canvas size or painter used.
     final lf = effLogo / 270.0;
