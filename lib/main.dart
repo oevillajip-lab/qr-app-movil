@@ -1,4 +1,4 @@
-import 'dart:convert' show utf8;
+import 'dart:convert' show utf8, jsonEncode, jsonDecode;
 import 'qr_svg_exporter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,6 +55,46 @@ double _safeLogoMax({
   final double auraFrac = (auraModules * 2.0) / modules.toDouble();
   final double maxFrac = (math.sqrt(0.27) - auraFrac).clamp(0.08, 0.519);
   return (maxFrac * canvasSize).clamp(hardMin, hardMax);
+}
+
+class QrHistoryItem {
+  final String id;
+  final String qrType;
+  final String preview;
+  final String pngPath;
+  final String svgPath;
+  final String action;
+  final DateTime createdAt;
+
+  const QrHistoryItem({
+    required this.id,
+    required this.qrType,
+    required this.preview,
+    required this.pngPath,
+    required this.svgPath,
+    required this.action,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'qrType': qrType,
+        'preview': preview,
+        'pngPath': pngPath,
+        'svgPath': svgPath,
+        'action': action,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory QrHistoryItem.fromJson(Map<String, dynamic> json) => QrHistoryItem(
+        id: (json['id'] ?? '').toString(),
+        qrType: (json['qrType'] ?? 'QR').toString(),
+        preview: (json['preview'] ?? '').toString(),
+        pngPath: (json['pngPath'] ?? '').toString(),
+        svgPath: (json['svgPath'] ?? '').toString(),
+        action: (json['action'] ?? 'Generado').toString(),
+        createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()) ?? DateTime.now(),
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -191,6 +231,7 @@ class _MainScreenState extends State<MainScreen>
   Uint8List? _logoBytes;
   img_lib.Image? _logoImage;
   List<List<bool>>? _outerMask;
+  List<QrHistoryItem> _historyItems = [];
 
   Uint8List? _shapeBytes;
   img_lib.Image? _shapeImage;
@@ -230,6 +271,12 @@ String _splitDir = "Vertical";
     "Circular (Puntos)",
     "Diamantes (Rombos)",
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
 
   @override
   void dispose() {
@@ -486,24 +533,127 @@ String _splitDir = "Vertical";
   // ── Historial ─────────────────────────────────────────────────────
   Widget _buildHistorialScreen() => Column(children: [
     _buildAppBar("Historial"),
-    Expanded(child: Center(child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 64, height: 64,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F2), borderRadius: BorderRadius.circular(16)),
-          child: const Icon(Icons.history, size: 32, color: Color(0xFFCCCCCC)),
-        ),
-        const SizedBox(height: 12),
-        const Text("Sin historial aún", style: TextStyle(
-            fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFAAAAAA))),
-        const SizedBox(height: 4),
-        const Text("Tus QRs guardados aparecerán aquí",
-            style: TextStyle(fontSize: 12, color: Color(0xFFCCCCCC))),
-      ],
-    ))),
+    Expanded(
+      child: _historyItems.isEmpty
+          ? Center(child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F2F2), borderRadius: BorderRadius.circular(16)),
+                  child: const Icon(Icons.history, size: 32, color: Color(0xFFCCCCCC)),
+                ),
+                const SizedBox(height: 12),
+                const Text("Sin historial aún", style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFAAAAAA))),
+                const SizedBox(height: 4),
+                const Text("Los QRs que guardes o compartas aparecerán aquí",
+                    style: TextStyle(fontSize: 12, color: Color(0xFFCCCCCC))),
+              ],
+            ))
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              itemCount: _historyItems.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final item = _historyItems[i];
+                final file = File(item.pngPath);
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFEDEDED)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(children: [
+                      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        GestureDetector(
+                          onTap: () => _showHistoryPreview(item),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              width: 68,
+                              height: 68,
+                              color: const Color(0xFFF5F5F5),
+                              child: file.existsSync()
+                                  ? Image.file(file, fit: BoxFit.cover)
+                                  : const Icon(Icons.qr_code_2, color: Color(0xFFBBBBBB)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Expanded(
+                                child: Text(item.qrType, style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF222222))),
+                              ),
+                              GestureDetector(
+                                onTap: () => _deleteHistoryItem(item),
+                                child: Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade400),
+                                ),
+                              ),
+                            ]),
+                            const SizedBox(height: 4),
+                            Text(item.preview, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF777777))),
+                            const SizedBox(height: 6),
+                            const Text('Toca la miniatura para ver',
+                                style: TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF2F2F2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(item.action, style: const TextStyle(
+                                  fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF555555))),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(_formatHistoryDate(item.createdAt),
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFFAAAAAA))),
+                            ]),
+                          ],
+                        )),
+                      ]),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(child: _bigBtn(
+                          "PNG", Icons.download_rounded,
+                          () => _saveHistoryImage(item),
+                          outlined: true,
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(child: _bigBtn(
+                          "SVG", Icons.share_outlined,
+                          () => _shareHistoryFile(item, asSvg: true),
+                        )),
+                      ]),
+                    ]),
+                  ),
+                );
+              },
+            ),
+    ),
   ]);
+
+  String _formatHistoryDate(DateTime dt) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)} · ${two(dt.hour)}:${two(dt.minute)}';
+  }
 
   // ── Configuracion ─────────────────────────────────────────────────
   Widget _buildConfigScreen() => Column(children: [
@@ -813,24 +963,13 @@ String _splitDir = "Vertical";
       Container(
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-        child: Row(children: [
-          Expanded(child: _bigBtn(
-            "GUARDAR", Icons.save_alt,
-            isEmpty ? null : () async {
-              HapticFeedback.heavyImpact();
-              await _guardarImagen();
-            },
-          )),
-          const SizedBox(width: 10),
-          Expanded(child: _bigBtn(
-            "COMPARTIR", Icons.share_outlined,
-            isEmpty ? null : () async {
-              HapticFeedback.heavyImpact();
-              await _mostrarSelectorCompartir();
-            },
-            outlined: true,
-          )),
-        ]),
+        child: _bigBtn(
+          "GUARDAR", Icons.save_alt,
+          isEmpty ? null : () async {
+            HapticFeedback.heavyImpact();
+            await _guardarEnHistorial();
+          },
+        ),
       ),
     ]);
   }
@@ -1652,6 +1791,267 @@ String _splitDir = "Vertical";
     return LinearGradient(colors: [c1, c2], begin: b, end: e);
   }
 
+Future<Directory> _getHistoryDir() async {
+  final base = await getApplicationSupportDirectory();
+  final dir = Directory('${base.path}/qr_history');
+  if (!await dir.exists()) {
+    await dir.create(recursive: true);
+  }
+  return dir;
+}
+
+Future<File> _getHistoryIndexFile() async {
+  final dir = await _getHistoryDir();
+  return File('${dir.path}/history.json');
+}
+
+String _historyPreviewText(String raw) {
+  final clean = raw.replaceAll('\n', ' ').trim();
+  if (clean.isEmpty) return 'Sin contenido';
+  return clean.length > 70 ? '${clean.substring(0, 70)}…' : clean;
+}
+
+Future<void> _loadHistory() async {
+  try {
+    final file = await _getHistoryIndexFile();
+    if (!await file.exists()) return;
+    final raw = await file.readAsString();
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return;
+
+    final items = decoded
+        .map((e) => QrHistoryItem.fromJson(Map<String, dynamic>.from(e)))
+        .where((item) => item.id.isNotEmpty)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (!mounted) return;
+    setState(() => _historyItems = items);
+  } catch (_) {}
+}
+
+Future<void> _persistHistory() async {
+  try {
+    final file = await _getHistoryIndexFile();
+    await file.writeAsString(
+      jsonEncode(_historyItems.map((e) => e.toJson()).toList()),
+      flush: true,
+    );
+  } catch (_) {}
+}
+
+Future<void> _addHistoryEntry({
+  required String action,
+  Uint8List? pngBytes,
+  String? svg,
+}) async {
+  final data = _getFinalData().trim();
+  if (data.isEmpty) return;
+
+  try {
+    final dir = await _getHistoryDir();
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final png = pngBytes ?? await _renderPng();
+    final svgText = svg ?? _buildSvg();
+
+    final pngFile = File('${dir.path}/$id.png');
+    final svgFile = File('${dir.path}/$id.svg');
+    await pngFile.writeAsBytes(png, flush: true);
+    await svgFile.writeAsString(svgText, flush: true);
+
+    final item = QrHistoryItem(
+      id: id,
+      qrType: _qrType,
+      preview: _historyPreviewText(data),
+      pngPath: pngFile.path,
+      svgPath: svgFile.path,
+      action: action,
+      createdAt: DateTime.now(),
+    );
+
+    final updated = [item, ..._historyItems];
+    while (updated.length > 40) {
+      final removed = updated.removeLast();
+      try { await File(removed.pngPath).delete(); } catch (_) {}
+      try { await File(removed.svgPath).delete(); } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() => _historyItems = updated);
+    await _persistHistory();
+  } catch (_) {}
+}
+
+Future<void> _saveHistoryImage(QrHistoryItem item) async {
+  try {
+    final file = File(item.pngPath);
+    if (!await file.exists()) throw 'PNG no disponible';
+    final pngBytes = await file.readAsBytes();
+    await ImageGallerySaver.saveImage(
+      pngBytes,
+      name: 'QR_Historial_${item.id}',
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Imagen PNG guardada en galería'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.black,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar imagen: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _saveHistorySvg(QrHistoryItem item) async {
+  try {
+    final src = File(item.svgPath);
+    if (!await src.exists()) throw 'SVG no disponible';
+    final dir = await _getExportDir();
+    final out = File('${dir.path}/QR_Historial_${item.id}.svg');
+    await out.writeAsBytes(await src.readAsBytes(), flush: true);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ SVG guardado en: ${out.path}'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.black,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar SVG: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _shareHistoryFile(QrHistoryItem item, {required bool asSvg}) async {
+  try {
+    final path = asSvg ? item.svgPath : item.pngPath;
+    final file = File(path);
+    if (!await file.exists()) throw 'Archivo no disponible';
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: asSvg ? 'image/svg+xml' : 'image/png')],
+      text: 'Generado con QR+Logo',
+    );
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al compartir: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _deleteHistoryItem(QrHistoryItem item) async {
+  try { await File(item.pngPath).delete(); } catch (_) {}
+  try { await File(item.svgPath).delete(); } catch (_) {}
+  if (!mounted) return;
+  setState(() {
+    _historyItems.removeWhere((e) => e.id == item.id);
+  });
+  await _persistHistory();
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Elemento eliminado del historial'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.black,
+      ),
+    );
+  }
+}
+
+Future<void> _showHistoryPreview(QrHistoryItem item) async {
+  if (!mounted) return;
+  final file = File(item.pngPath);
+  await showDialog(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(
+                child: Text(item.qrType, style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF222222))),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ]),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              height: 260,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: file.existsSync()
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(file, fit: BoxFit.contain),
+                    )
+                  : const Icon(Icons.qr_code_2, size: 80, color: Color(0xFFBBBBBB)),
+            ),
+            const SizedBox(height: 10),
+            Text(item.preview, maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF777777))),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: _bigBtn(
+                'Descargar PNG', Icons.download_rounded,
+                () async {
+                  Navigator.pop(ctx);
+                  await _saveHistoryImage(item);
+                },
+                outlined: true,
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: _bigBtn(
+                'Compartir SVG', Icons.share_outlined,
+                () async {
+                  Navigator.pop(ctx);
+                  await _shareHistoryFile(item, asSvg: true);
+                },
+              )),
+            ]),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
  Future<Directory> _getExportDir() async {
   if (Platform.isAndroid) {
     final dirs = await getExternalStorageDirectories(
@@ -1664,13 +2064,43 @@ String _splitDir = "Vertical";
   return await getApplicationDocumentsDirectory();
 }
 
+Future<void> _guardarEnHistorial() async {
+  try {
+    final pngBytes = await _renderPng();
+    final svg = _buildSvg();
+    await _addHistoryEntry(action: 'Guardado', pngBytes: pngBytes, svg: svg);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Se guardó en historial'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.black,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al guardar en historial: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
 Future<void> _guardarImagen() async {
   try {
     final pngBytes = await _renderPng();
+    final svg = _buildSvg();
     await ImageGallerySaver.saveImage(
       pngBytes,
       name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
     );
+    await _addHistoryEntry(action: "PNG guardado", pngBytes: pngBytes, svg: svg);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1703,6 +2133,7 @@ Future<void> _guardarSvg() async {
     final file = File('${dir.path}/$fileName');
 
     await file.writeAsBytes(svgBytes);
+    await _addHistoryEntry(action: "SVG guardado", svg: svg);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1730,6 +2161,7 @@ Future<void> _compartirImagen() async {
   try {
     final tmpDir = await getTemporaryDirectory();
     final pngBytes = await _renderPng();
+    final svg = _buildSvg();
     final pngFile = File(
       '${tmpDir.path}/QR_Logo_${DateTime.now().millisecondsSinceEpoch}.png',
     );
@@ -1739,6 +2171,7 @@ Future<void> _compartirImagen() async {
       [XFile(pngFile.path, mimeType: 'image/png')],
       text: 'Generado con QR+Logo',
     );
+    await _addHistoryEntry(action: 'PNG compartido', pngBytes: pngBytes, svg: svg);
   } catch (e) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1766,6 +2199,7 @@ Future<void> _compartirSvg() async {
       [XFile(svgFile.path, mimeType: 'image/svg+xml')],
       text: 'Generado con QR+Logo',
     );
+    await _addHistoryEntry(action: 'SVG compartido', svg: svg);
   } catch (e) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2068,6 +2502,7 @@ Future<Uint8List> _renderPreviewPng() async {
       final docsDir = await getApplicationDocumentsDirectory();
       final svgFile = File('${docsDir.path}/QR_Logo.svg');
       await svgFile.writeAsBytes(svgBytes);
+      await _addHistoryEntry(action: 'Exportado', pngBytes: pngBytes, svg: svg);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2114,6 +2549,7 @@ Future<Uint8List> _renderPreviewPng() async {
         ],
         text: 'Generado con QR+Logo',
       );
+      await _addHistoryEntry(action: 'Compartido', pngBytes: pngBytes, svg: svg);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2483,6 +2919,99 @@ class StylePreviewPainter extends CustomPainter {
 }
 
 
+List<List<bool>> _dilateLogoMask(List<List<bool>> mask, double radiusX, double radiusY) {
+  final int h = mask.length;
+  final int w = mask.first.length;
+  final out = List.generate(h, (_) => List.filled(w, false));
+
+  if (radiusX <= 0.01 && radiusY <= 0.01) {
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        out[y][x] = mask[y][x];
+      }
+    }
+    return out;
+  }
+
+  final int rx = math.max(0, radiusX.ceil());
+  final int ry = math.max(0, radiusY.ceil());
+  final double safeRX = math.max(radiusX, 0.0001);
+  final double safeRY = math.max(radiusY, 0.0001);
+
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      if (!mask[y][x]) continue;
+      for (int ny = math.max(0, y - ry); ny <= math.min(h - 1, y + ry); ny++) {
+        final double dy = (ny - y) / safeRY;
+        for (int nx = math.max(0, x - rx); nx <= math.min(w - 1, x + rx); nx++) {
+          final double dx = (nx - x) / safeRX;
+          if (dx * dx + dy * dy <= 1.0) {
+            out[ny][nx] = true;
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+List<List<bool>> _buildLogoExclusionGrid({
+  required int modules,
+  required List<List<bool>> outerMask,
+  required double logoSize,
+  required double auraSize,
+  double referenceSize = 270.0,
+}) {
+  final excl = List.generate(modules, (_) => List.filled(modules, false));
+  if (logoSize <= 0 || outerMask.isEmpty || outerMask.first.isEmpty) return excl;
+
+  final int maskH = outerMask.length;
+  final int maskW = outerMask.first.length;
+  final double lf = logoSize / referenceSize;
+
+  double drawW = lf;
+  double drawH = lf;
+  if (maskW > maskH) {
+    drawH = lf * (maskH / maskW);
+  } else if (maskH > maskW) {
+    drawW = lf * (maskW / maskH);
+  }
+
+  final double lsX = 0.5 - drawW / 2.0;
+  final double leX = lsX + drawW;
+  final double lsY = 0.5 - drawH / 2.0;
+  final double leY = lsY + drawH;
+
+  final double auraFrac = math.max(0.0, auraSize / modules);
+  final double auraPxX = drawW <= 0 ? 0.0 : (auraFrac * maskW / drawW);
+  final double auraPxY = drawH <= 0 ? 0.0 : (auraFrac * maskH / drawH);
+  final dilatedMask = _dilateLogoMask(outerMask, auraPxX, auraPxY);
+
+  const samples = [0.12, 0.30, 0.50, 0.70, 0.88];
+  for (int r = 0; r < modules; r++) {
+    for (int c = 0; c < modules; c++) {
+      bool hit = false;
+      for (final dy in samples) {
+        for (final dx in samples) {
+          final double nx = (c + dx) / modules;
+          final double ny = (r + dy) / modules;
+          if (nx < lsX || nx > leX || ny < lsY || ny > leY) continue;
+
+          final int px = ((((nx - lsX) / drawW) * maskW).clamp(0.0, maskW - 1.0)).toInt();
+          final int py = ((((ny - lsY) / drawH) * maskH).clamp(0.0, maskH - 1.0)).toInt();
+          if (dilatedMask[py][px]) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      excl[r][c] = hit;
+    }
+  }
+  return excl;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // SECCIÓN 10: PINTOR QR BÁSICO
 // ═══════════════════════════════════════════════════════════════════
@@ -2525,47 +3054,14 @@ class QrMasterPainter extends CustomPainter {
           [qrC1, qrC2]);
       paint.shader = grad;
     } else { paint.color = qrC1; }
-    final excl = List.generate(m, (_) => List.filled(m, false));
-      if (logoImage != null && outerMask != null) {
-        final lf = effLogo / 270.0;
-        final imgW = logoImage!.width.toDouble();
-        final imgH = logoImage!.height.toDouble();
-        double drawW = lf;
-        double drawH = lf;
-        if (imgW > imgH) {
-          drawH = lf * (imgH / imgW);
-        } else if (imgH > imgW) {
-          drawW = lf * (imgW / imgH);
-        }
-        final lsX = 0.5 - drawW / 2.0;
-        final leX = lsX + drawW;
-        final lsY = 0.5 - drawH / 2.0;
-        final leY = lsY + drawH;
-      final base = List.generate(m, (_) => List.filled(m, false));
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        bool hit = false;
-        for (double dy = 0.2; dy <= 0.8 && !hit; dy += 0.3)
-          for (double dx = 0.2; dx <= 0.8 && !hit; dx += 0.3) {
-            final nx = (c + dx) / m; final ny = (r + dy) / m;
-              if (nx >= lsX && nx <= leX && ny >= lsY && ny <= leY) {
-                final px = ((nx - lsX) / drawW * logoImage!.width)
-                    .clamp(0, logoImage!.width - 1)
-                    .toInt();
-                final py = ((ny - lsY) / drawH * logoImage!.height)
-                    .clamp(0, logoImage!.height - 1)
-                    .toInt();
-              if (outerMask![py][px]) hit = true;
-            }
-          }
-        if (hit) base[r][c] = true;
-      }
-      final ar = auraSize.toInt();
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++)
-        if (base[r][c]) for (int dr = -ar; dr <= ar; dr++) for (int dc = -ar; dc <= ar; dc++) {
-          final nr = r + dr; final nc = c + dc;
-          if (nr >= 0 && nr < m && nc >= 0 && nc < m) excl[nr][nc] = true;
-        }
-    }
+    final excl = outerMask != null && effLogo > 0
+        ? _buildLogoExclusionGrid(
+            modules: m,
+            outerMask: outerMask!,
+            logoSize: effLogo,
+            auraSize: auraSize,
+          )
+        : List.generate(m, (_) => List.filled(m, false));
     bool ok(int r, int c) {
       if (r < 0 || r >= m || c < 0 || c >= m) return false;
       if (!qr.isDark(r, c)) return false;
@@ -2701,50 +3197,15 @@ class QrAdvancedPainter extends CustomPainter {
   }
 
   List<List<bool>> _buildLogoExcl(int m, double t) {
-    final excl = List.generate(m, (_) => List.filled(m, false));
-    if (logoImage == null || outerMask == null || logoSize <= 0) return excl;
-    final effLogo = logoSize;
-    // Use 270.0 as fixed reference — same denominator as QrMasterPainter — so
-    // the exclusion zone is identical regardless of canvas size or painter used.
-    final lf = effLogo / 270.0;
-    final imgW = logoImage!.width.toDouble();
-    final imgH = logoImage!.height.toDouble();
-    double drawW = lf;
-    double drawH = lf;
-    if (imgW > imgH) {
-      drawH = lf * (imgH / imgW);
-    } else if (imgH > imgW) {
-      drawW = lf * (imgW / imgH);
+    if (outerMask == null || logoSize <= 0) {
+      return List.generate(m, (_) => List.filled(m, false));
     }
-    final lsX = 0.5 - drawW / 2.0;
-    final leX = lsX + drawW;
-    final lsY = 0.5 - drawH / 2.0;
-    final leY = lsY + drawH;
-    final base = List.generate(m, (_) => List.filled(m, false));
-    for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-      bool hit = false;
-      for (double dy = 0.2; dy <= 0.8 && !hit; dy += 0.3)
-        for (double dx = 0.2; dx <= 0.8 && !hit; dx += 0.3) {
-          final nx = (c + dx) / m; final ny = (r + dy) / m;
-          if (nx >= lsX && nx <= leX && ny >= lsY && ny <= leY) {
-            final px = ((nx - lsX) / drawW * logoImage!.width)
-                .clamp(0, logoImage!.width - 1)
-                .toInt();
-            final py = ((ny - lsY) / drawH * logoImage!.height)
-                .clamp(0, logoImage!.height - 1)
-                .toInt();
-            if (outerMask![py][px]) hit = true;
-          }
-        }
-      if (hit) base[r][c] = true;
-    }
-    final ar = auraSize.toInt();
-    for (int r = 0; r < m; r++) for (int c = 0; c < m; c++)
-      if (base[r][c]) for (int dr = -ar; dr <= ar; dr++) for (int dc = -ar; dc <= ar; dc++) {
-        final nr = r + dr; final nc = c + dc;
-        if (nr >= 0 && nr < m && nc >= 0 && nc < m) excl[nr][nc] = true;
-      }
-    return excl;
+    return _buildLogoExclusionGrid(
+      modules: m,
+      outerMask: outerMask!,
+      logoSize: logoSize,
+      auraSize: auraSize,
+    );
   }
 
   List<List<bool>> _buildCanvasShapeMask(int width, int height) {

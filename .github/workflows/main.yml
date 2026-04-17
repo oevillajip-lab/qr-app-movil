@@ -19,10 +19,17 @@ jobs:
           channel: stable
 
       - name: Build QR+Logo
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
           # Genera la estructura faltante (android/, etc.)
           # El nombre técnico NO puede llevar + ni espacios
-          flutter create --project-name qr_logo .
+          # --org fijo = identificador de paquete estable entre compilados
+          flutter create --project-name qr_logo --org com.example .
 
           # Fuerza SDK 34
           sed -i 's/flutter.compileSdkVersion/34/g' android/app/build.gradle
@@ -31,9 +38,23 @@ jobs:
           # Nombre visible de la app instalada en Android
           sed -i 's/android:label="qr_logo"/android:label="QR+Logo"/g' android/app/src/main/AndroidManifest.xml
 
+          # Si existen secretos, firma siempre con la misma clave para permitir actualización sobre la app ya instalada
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ] && [ -n "$STORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > android/app/upload-keystore.jks
+            cat > android/key.properties <<EOF
+storePassword=$STORE_PASSWORD
+keyPassword=$KEY_PASSWORD
+keyAlias=$KEY_ALIAS
+storeFile=app/upload-keystore.jks
+EOF
+            echo "Using stable Android signing key"
+          else
+            echo "No signing secrets found; package id will stay stable, but updates over previous installs may fail if signatures differ."
+          fi
+
           flutter pub get
           flutter pub run flutter_launcher_icons
-          flutter build apk --release
+          flutter build apk --release --build-name="1.0.$BUILD_NUMBER" --build-number="$BUILD_NUMBER"
 
           # Renombra el APK final
           mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/QR+Logo.apk

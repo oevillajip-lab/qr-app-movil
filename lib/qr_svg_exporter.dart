@@ -787,24 +787,30 @@ class QrSvgExporter {
     if (outerMask == null || outerMask.isEmpty || outerMask.first.isEmpty || logoSizeFrac <= 0) {
       return excl;
     }
+
     final int h = outerMask.length;
     final int w = outerMask.first.length;
-    final double lf = logoSizeFrac;
     final double maskW = w.toDouble();
     final double maskH = h.toDouble();
-    double drawW = lf;
-    double drawH = lf;
+    double drawW = logoSizeFrac;
+    double drawH = logoSizeFrac;
     if (maskW > maskH) {
-      drawH = lf * (maskH / maskW);
+      drawH = logoSizeFrac * (maskH / maskW);
     } else if (maskH > maskW) {
-      drawW = lf * (maskW / maskH);
+      drawW = logoSizeFrac * (maskW / maskH);
     }
+
     final double lsX = 0.5 - drawW / 2.0;
     final double leX = lsX + drawW;
     final double lsY = 0.5 - drawH / 2.0;
     final double leY = lsY + drawH;
-    final base = List.generate(m, (_) => List.filled(m, false));
-    const samples = [0.2, 0.5, 0.8];
+
+    final double auraFrac = math.max(0.0, logoAuraModules / m);
+    final double auraPxX = drawW <= 0 ? 0.0 : (auraFrac * maskW / drawW);
+    final double auraPxY = drawH <= 0 ? 0.0 : (auraFrac * maskH / drawH);
+    final dilatedMask = _dilateMask(outerMask, auraPxX, auraPxY);
+
+    const samples = [0.12, 0.30, 0.50, 0.70, 0.88];
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         bool hit = false;
@@ -812,40 +818,57 @@ class QrSvgExporter {
           for (final dx in samples) {
             final double nx = (c + dx) / m;
             final double ny = (r + dy) / m;
-            if (nx >= lsX && nx <= leX && ny >= lsY && ny <= leY) {
-              final int px = (((nx - lsX) / drawW) * w)
-                  .clamp(0.0, w - 1.0)
-                  .toInt();
-              final int py = (((ny - lsY) / drawH) * h)
-                  .clamp(0.0, h - 1.0)
-                  .toInt();
-              if (outerMask[py][px]) {
-                hit = true;
-                break;
-              }
+            if (nx < lsX || nx > leX || ny < lsY || ny > leY) continue;
+
+            final int px = ((((nx - lsX) / drawW) * w).clamp(0.0, w - 1.0)).toInt();
+            final int py = ((((ny - lsY) / drawH) * h).clamp(0.0, h - 1.0)).toInt();
+            if (dilatedMask[py][px]) {
+              hit = true;
+              break;
             }
           }
           if (hit) break;
         }
-        if (hit) base[r][c] = true;
+        excl[r][c] = hit;
       }
     }
-    final int ar = logoAuraModules.toInt();
-    for (int r = 0; r < m; r++) {
-      for (int c = 0; c < m; c++) {
-        if (!base[r][c]) continue;
-        for (int dr = -ar; dr <= ar; dr++) {
-          for (int dc = -ar; dc <= ar; dc++) {
-            final nr = r + dr;
-            final nc = c + dc;
-            if (nr >= 0 && nr < m && nc >= 0 && nc < m) {
-              excl[nr][nc] = true;
+    return excl;
+  }
+
+  static List<List<bool>> _dilateMask(List<List<bool>> mask, double radiusX, double radiusY) {
+    final int h = mask.length;
+    final int w = mask.first.length;
+    final out = List.generate(h, (_) => List.filled(w, false));
+
+    if (radiusX <= 0.01 && radiusY <= 0.01) {
+      for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+          out[y][x] = mask[y][x];
+        }
+      }
+      return out;
+    }
+
+    final int rx = math.max(0, radiusX.ceil());
+    final int ry = math.max(0, radiusY.ceil());
+    final double safeRX = math.max(radiusX, 0.0001);
+    final double safeRY = math.max(radiusY, 0.0001);
+
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        if (!mask[y][x]) continue;
+        for (int ny = math.max(0, y - ry); ny <= math.min(h - 1, y + ry); ny++) {
+          final double dy = (ny - y) / safeRY;
+          for (int nx = math.max(0, x - rx); nx <= math.min(w - 1, x + rx); nx++) {
+            final double dx = (nx - x) / safeRX;
+            if (dx * dx + dy * dy <= 1.0) {
+              out[ny][nx] = true;
             }
           }
         }
       }
     }
-    return excl;
+    return out;
   }
 
   static String _eye(double ox, double oy, double t, String extFill, String intFill, bool isCircle, bool isDiamond) {
