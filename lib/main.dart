@@ -1,4 +1,5 @@
 import 'dart:convert' show utf8;
+import 'qr_logo_exclusion.dart';
 import 'qr_svg_exporter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2493,30 +2494,12 @@ class QrMasterPainter extends CustomPainter {
           [qrC1, qrC2]);
       paint.shader = grad;
     } else { paint.color = qrC1; }
-    final excl = List.generate(m, (_) => List.filled(m, false));
-    if (logoImage != null && outerMask != null) {
-      final lf = effLogo / 270.0; final ls = (1 - lf) / 2.0; final le = ls + lf;
-      final base = List.generate(m, (_) => List.filled(m, false));
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-        bool hit = false;
-        for (double dy = 0.2; dy <= 0.8 && !hit; dy += 0.3)
-          for (double dx = 0.2; dx <= 0.8 && !hit; dx += 0.3) {
-            final nx = (c + dx) / m; final ny = (r + dy) / m;
-            if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
-              final px = ((nx - ls) / lf * logoImage!.width).clamp(0, logoImage!.width - 1).toInt();
-              final py = ((ny - ls) / lf * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
-              if (outerMask![py][px]) hit = true;
-            }
-          }
-        if (hit) base[r][c] = true;
-      }
-      final ar = auraSize.toInt();
-      for (int r = 0; r < m; r++) for (int c = 0; c < m; c++)
-        if (base[r][c]) for (int dr = -ar; dr <= ar; dr++) for (int dc = -ar; dc <= ar; dc++) {
-          final nr = r + dr; final nc = c + dc;
-          if (nr >= 0 && nr < m && nc >= 0 && nc < m) excl[nr][nc] = true;
-        }
-    }
+    final excl = buildCenteredLogoExclusion(
+      modules: m,
+      outerMask: outerMask,
+      logoSizeFraction: effLogo / 270.0,
+      logoAuraModules: auraSize,
+    );
     bool ok(int r, int c) {
       if (r < 0 || r >= m || c < 0 || c >= m) return false;
       if (!qr.isDark(r, c)) return false;
@@ -2652,34 +2635,14 @@ class QrAdvancedPainter extends CustomPainter {
   }
 
   List<List<bool>> _buildLogoExcl(int m, double t) {
-    final excl = List.generate(m, (_) => List.filled(m, false));
-    if (logoImage == null || outerMask == null || logoSize <= 0) return excl;
+    if (logoSize <= 0) return List.generate(m, (_) => List.filled(m, false));
     final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
-    // Use 270.0 as fixed reference — same denominator as QrMasterPainter — so
-    // the exclusion zone is identical regardless of canvas size or painter used.
-    final lf = effLogo / 270.0;
-    final ls = (1 - lf) / 2.0; final le = ls + lf;
-    final base = List.generate(m, (_) => List.filled(m, false));
-    for (int r = 0; r < m; r++) for (int c = 0; c < m; c++) {
-      bool hit = false;
-      for (double dy = 0.2; dy <= 0.8 && !hit; dy += 0.3)
-        for (double dx = 0.2; dx <= 0.8 && !hit; dx += 0.3) {
-          final nx = (c + dx) / m; final ny = (r + dy) / m;
-          if (nx >= ls && nx <= le && ny >= ls && ny <= le) {
-            final px = ((nx - ls) / lf * logoImage!.width).clamp(0, logoImage!.width - 1).toInt();
-            final py = ((ny - ls) / lf * logoImage!.height).clamp(0, logoImage!.height - 1).toInt();
-            if (outerMask![py][px]) hit = true;
-          }
-        }
-      if (hit) base[r][c] = true;
-    }
-    final ar = auraSize.toInt();
-    for (int r = 0; r < m; r++) for (int c = 0; c < m; c++)
-      if (base[r][c]) for (int dr = -ar; dr <= ar; dr++) for (int dc = -ar; dc <= ar; dc++) {
-        final nr = r + dr; final nc = c + dc;
-        if (nr >= 0 && nr < m && nc >= 0 && nc < m) excl[nr][nc] = true;
-      }
-    return excl;
+    return buildCenteredLogoExclusion(
+      modules: m,
+      outerMask: outerMask,
+      logoSizeFraction: effLogo / 270.0,
+      logoAuraModules: auraSize,
+    );
   }
 
   List<List<bool>> _buildCanvasShapeMask(int width, int height) {
