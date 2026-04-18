@@ -2919,19 +2919,10 @@ class StylePreviewPainter extends CustomPainter {
 }
 
 
-List<List<bool>> _dilateLogoMask(List<List<bool>> mask, double radiusX, double radiusY) {
+List<List<bool>> _dilateModuleMask(List<List<bool>> mask, double radiusX, double radiusY) {
   final int h = mask.length;
   final int w = mask.first.length;
   final out = List.generate(h, (_) => List.filled(w, false));
-
-  if (radiusX <= 0.01 && radiusY <= 0.01) {
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        out[y][x] = mask[y][x];
-      }
-    }
-    return out;
-  }
 
   final int rx = math.max(0, radiusX.ceil());
   final int ry = math.max(0, radiusY.ceil());
@@ -2982,12 +2973,23 @@ List<List<bool>> _buildLogoExclusionGrid({
   final double lsY = 0.5 - drawH / 2.0;
   final double leY = lsY + drawH;
 
-  final double auraFrac = math.max(0.0, auraSize / modules);
-  final double auraPxX = drawW <= 0 ? 0.0 : (auraFrac * maskW / drawW);
-  final double auraPxY = drawH <= 0 ? 0.0 : (auraFrac * maskH / drawH);
-  final dilatedMask = _dilateLogoMask(outerMask, auraPxX, auraPxY);
-
+  final base = List.generate(modules, (_) => List.filled(modules, false));
   const samples = [0.12, 0.30, 0.50, 0.70, 0.88];
+
+  int minPX = maskW;
+  int minPY = maskH;
+  int maxPX = -1;
+  int maxPY = -1;
+  for (int y = 0; y < maskH; y++) {
+    for (int x = 0; x < maskW; x++) {
+      if (!outerMask[y][x]) continue;
+      if (x < minPX) minPX = x;
+      if (x > maxPX) maxPX = x;
+      if (y < minPY) minPY = y;
+      if (y > maxPY) maxPY = y;
+    }
+  }
+
   for (int r = 0; r < modules; r++) {
     for (int c = 0; c < modules; c++) {
       bool hit = false;
@@ -2999,17 +3001,30 @@ List<List<bool>> _buildLogoExclusionGrid({
 
           final int px = ((((nx - lsX) / drawW) * maskW).clamp(0.0, maskW - 1.0)).toInt();
           final int py = ((((ny - lsY) / drawH) * maskH).clamp(0.0, maskH - 1.0)).toInt();
-          if (dilatedMask[py][px]) {
+          if (outerMask[py][px]) {
             hit = true;
             break;
           }
         }
         if (hit) break;
       }
-      excl[r][c] = hit;
+      base[r][c] = hit;
     }
   }
-  return excl;
+
+  final double activeW = maxPX >= minPX ? (maxPX - minPX + 1).toDouble() : maskW.toDouble();
+  final double activeH = maxPY >= minPY ? (maxPY - minPY + 1).toDouble() : maskH.toDouble();
+  final double aspect = activeW / math.max(activeH, 1.0);
+
+  double radiusX = auraSize;
+  double radiusY = auraSize;
+  if (aspect > 1.18) {
+    radiusY *= 0.82;
+  } else if (aspect < 0.85) {
+    radiusX *= 0.82;
+  }
+
+  return _dilateModuleMask(base, radiusX, radiusY);
 }
 
 // ═══════════════════════════════════════════════════════════════════
