@@ -285,6 +285,12 @@ String _splitDir = "Vertical";
     super.dispose();
   }
 
+  double _effectiveAuraModules() {
+    final uiGap = _auraSize.clamp(0.5, 5.0);
+    final normalized = ((uiGap - 0.5) / 4.5).clamp(0.0, 1.0);
+    return 0.12 + (normalized * 1.08);
+  }
+
   double _effectiveLogo(bool isShape) {
     if (isShape) return 0.0;
     final data = _getFinalData();
@@ -294,7 +300,7 @@ String _splitDir = "Vertical";
 
     final baseMax = math.max(
       30.0,
-      _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize),
+      _safeLogoMax(modules: qr.moduleCount, auraModules: _effectiveAuraModules()),
     );
     final baseSize = _logoSize.clamp(30.0, baseMax);
 
@@ -1417,8 +1423,8 @@ String _splitDir = "Vertical";
                 _sliderRow("Tamaño", "${effLogo.toInt()}px",
                     _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
                 const SizedBox(height: 10),
-                _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
-                    _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
+                _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)}",
+                    _auraSize, 0.5, 5.0, 18, (v) => setState(() => _auraSize = v)),
               ]),
             ),
           ],
@@ -2288,7 +2294,7 @@ String _buildSvg() {
     outerMask: isShape ? null : _outerMask,
     shapeMask: isShape ? _shapeMask : null,
     logoSizeFrac: isShape ? 0.0 : (effLogo / 270.0),
-    logoAuraModules: isShape ? 0.0 : _auraSize,
+    logoAuraModules: isShape ? 0.0 : _effectiveAuraModules(),
     shapeGap: _shapeGap,
     size: 1024,
   );
@@ -2348,7 +2354,7 @@ String _buildSvg() {
         outerMask: isShape ? null : _outerMask,
         shapeImage: _shapeImage, shapeMask: _shapeMask,
         logoSize: isShape ? 0.0 : effLogo,
-        auraSize: isShape ? 0.0 : _auraSize,
+        auraSize: isShape ? 0.0 : _effectiveAuraModules(),
         shapeGap: _shapeGap,
         qrC1: _qrC1, qrC2: _qrC2,
         qrMode: _qrColorMode, qrDir: _qrGradDir,
@@ -2359,7 +2365,7 @@ String _buildSvg() {
         data: data, estilo: estilo,
         logoImage: _logoImage, outerMask: _outerMask,
         logoSize: isShape ? 0.0 : effLogo,
-        auraSize: _auraSize,
+        auraSize: _effectiveAuraModules(),
         qrC1: _qrC1, qrC2: _qrC2,
         qrMode: _qrColorMode, qrDir: _qrGradDir,
         customEyes: _customEyes, eyeExt: _eyeExt, eyeInt: _eyeInt,
@@ -2422,7 +2428,7 @@ Future<Uint8List> _renderPreviewPng() async {
       shapeImage: _shapeImage,
       shapeMask: _shapeMask,
       logoSize: isShape ? 0.0 : effLogo,
-      auraSize: isShape ? 0.0 : _auraSize,
+      auraSize: isShape ? 0.0 : _effectiveAuraModules(),
       shapeGap: _shapeGap,
       qrC1: _qrC1,
       qrC2: _qrC2,
@@ -2439,7 +2445,7 @@ Future<Uint8List> _renderPreviewPng() async {
       logoImage: _logoImage,
       outerMask: _outerMask,
       logoSize: isShape ? 0.0 : effLogo,
-      auraSize: _auraSize,
+      auraSize: _effectiveAuraModules(),
       qrC1: _qrC1,
       qrC2: _qrC2,
       qrMode: _qrColorMode,
