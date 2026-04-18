@@ -167,6 +167,7 @@ class _MainScreenState extends State<MainScreen>
   final _c3 = TextEditingController();
   final _c4 = TextEditingController();
   final _c5 = TextEditingController();
+  final _logoTextCtrl = TextEditingController();
 
   final int _tab = 1; // fijo: funciones de render siempre usan _estiloAvz
   int _bottomTab = 0; // 0=Crear QR, 1=Historial, 2=Config
@@ -192,6 +193,13 @@ class _MainScreenState extends State<MainScreen>
   Uint8List? _logoBytes;
   img_lib.Image? _logoImage;
   List<List<bool>>? _outerMask;
+  String _logoInputMode = "Imagen";
+  String _activeLogoKind = "Imagen";
+  String _logoTextColorMode = "Sólido";
+  String _logoTextGradDir = "Horizontal";
+  String _logoFont = "Roboto Regular";
+  Color _logoTextC1 = Colors.black;
+  Color _logoTextC2 = const Color(0xFF1565C0);
 
   Uint8List? _shapeBytes;
   img_lib.Image? _shapeImage;
@@ -232,10 +240,24 @@ String _splitDir = "Vertical";
     "Diamantes (Rombos)",
   ];
 
+  static const _textFontOptions = [
+    "Roboto Regular",
+    "Roboto Black",
+    "Sans Light",
+    "Condensada",
+    "Serif Formal",
+    "Monoespaciada",
+    "Itálica",
+    "Casual",
+    "Cursiva",
+    "Extravagante",
+  ];
+
   @override
   void dispose() {
     _c1.dispose(); _c2.dispose(); _c3.dispose();
     _c4.dispose(); _c5.dispose();
+    _logoTextCtrl.dispose();
     super.dispose();
   }
 
@@ -250,13 +272,52 @@ String _splitDir = "Vertical";
     return _logoSize.clamp(30.0, maxPx);
   }
 
-  Future<void> _processLogo(File file) async {
-    final bytes = await file.readAsBytes();
-    img_lib.Image? img = img_lib.decodeImage(bytes);
-    if (img == null) return;
-    img = img.convert(numChannels: 4);
-    final ext = file.path.toLowerCase();
-    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
+  void _clearCurrentLogo({bool clearText = false}) {
+    _logoBytes = null;
+    _logoImage = null;
+    _outerMask = null;
+    if (clearText) _logoTextCtrl.clear();
+  }
+
+  TextStyle _logoTextStyleFor(String name, double size) {
+    switch (name) {
+      case "Roboto Black":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w900, letterSpacing: -1.0, color: Colors.black, fontFamily: 'sans-serif');
+      case "Sans Light":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w300, color: Colors.black, fontFamily: 'sans-serif-light');
+      case "Condensada":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w700, letterSpacing: -0.8, color: Colors.black, fontFamily: 'sans-serif-condensed');
+      case "Serif Formal":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w700, color: Colors.black, fontFamily: 'serif');
+      case "Monoespaciada":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w600, letterSpacing: 0.6, color: Colors.black, fontFamily: 'monospace');
+      case "Itálica":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic, color: Colors.black, fontFamily: 'sans-serif-medium');
+      case "Casual":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w600, color: Colors.black, fontFamily: 'casual');
+      case "Cursiva":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w600, color: Colors.black, fontFamily: 'cursive');
+      case "Extravagante":
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w700, fontStyle: FontStyle.italic, letterSpacing: 1.1, color: Colors.black, fontFamily: 'serif');
+      default:
+        return TextStyle(fontSize: size, fontWeight: FontWeight.w400, color: Colors.black, fontFamily: 'sans-serif');
+    }
+  }
+
+  TextStyle _currentLogoTextStyle(double size, {Rect? shaderRect}) {
+    final base = _logoTextStyleFor(_logoFont, size);
+    if (_logoTextColorMode == "Degradado") {
+      return base.copyWith(
+        foreground: Paint()
+          ..shader = _getGrad(_logoTextC1, _logoTextC2, _logoTextGradDir)
+              .createShader(shaderRect ?? Rect.fromLTWH(0, 0, size * 6, size * 2)),
+      );
+    }
+    return base.copyWith(color: _logoTextC1);
+  }
+
+  Future<void> _applyPreparedLogo(img_lib.Image img, Uint8List png,
+      {bool syncQrPalette = false, required String kind}) async {
     final w = img.width; final h = img.height;
     final rB = List.generate(h, (_) => List.filled(w, false));
     for (int y = 0; y < h; y++) {
@@ -274,16 +335,82 @@ String _splitDir = "Vertical";
       }
       if (fy != -1) for (int y = fy; y <= ly; y++) { if (rB[y][x]) mask[y][x] = true; }
     }
-    final png = Uint8List.fromList(img_lib.encodePng(img));
-    final palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
+
+    PaletteGenerator? palette;
+    if (syncQrPalette) {
+      palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
+    }
+
+    if (!mounted) return;
     setState(() {
-      _logoBytes = png; _logoImage = img; _outerMask = mask;
-      _qrC1 = palette.darkVibrantColor?.color ??
-          palette.darkMutedColor?.color ??
-          palette.dominantColor?.color ?? Colors.black;
-      _qrC2 = palette.vibrantColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1;
-      _qrColorMode = "Automático (Logo)";
+      _logoBytes = png;
+      _logoImage = img;
+      _outerMask = mask;
+      _activeLogoKind = kind;
+      if (syncQrPalette && palette != null) {
+        _qrC1 = palette!.darkVibrantColor?.color ??
+            palette!.darkMutedColor?.color ??
+            palette!.dominantColor?.color ?? Colors.black;
+        _qrC2 = palette!.vibrantColor?.color ?? palette!.lightVibrantColor?.color ?? _qrC1;
+        _qrColorMode = "Automático (Logo)";
+      }
     });
+  }
+
+  Future<void> _renderTextLogo() async {
+    if (_logoInputMode != "Texto") return;
+    final raw = _logoTextCtrl.text.trim();
+    if (raw.isEmpty) {
+      if (!mounted) return;
+      setState(() => _clearCurrentLogo());
+      return;
+    }
+
+    final previewText = raw.length > 24 ? '${raw.substring(0, 24)}…' : raw;
+    const double fontSize = 132;
+    final probe = TextPainter(
+      text: TextSpan(text: previewText, style: _currentLogoTextStyle(fontSize)),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      ellipsis: '…',
+    )..layout(maxWidth: 720);
+
+    final double width = math.max(220, probe.width + 60);
+    final double height = math.max(160, probe.height + 56);
+    final rect = Rect.fromLTWH(0, 0, width, height);
+    final tp = TextPainter(
+      text: TextSpan(text: previewText, style: _currentLogoTextStyle(fontSize, shaderRect: rect)),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      ellipsis: '…',
+    )..layout(maxWidth: width - 30);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    tp.paint(canvas, Offset((width - tp.width) / 2, (height - tp.height) / 2));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width.ceil(), height.ceil());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) return;
+
+    final png = byteData.buffer.asUint8List();
+    img_lib.Image? decoded = img_lib.decodeImage(png);
+    if (decoded == null) return;
+    decoded = decoded.convert(numChannels: 4);
+    await _applyPreparedLogo(decoded, png, kind: "Texto");
+  }
+
+  Future<void> _processLogo(File file) async {
+    final bytes = await file.readAsBytes();
+    img_lib.Image? img = img_lib.decodeImage(bytes);
+    if (img == null) return;
+    img = img.convert(numChannels: 4);
+    final ext = file.path.toLowerCase();
+    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
+    final png = Uint8List.fromList(img_lib.encodePng(img));
+    await _applyPreparedLogo(img, png, syncQrPalette: true, kind: "Imagen");
   }
 
   bool _hasRealTransparency(img_lib.Image src) {
@@ -1183,97 +1310,293 @@ String _splitDir = "Vertical";
   }
 
   // ── Tab Logo ──────────────────────────────────────────────────────
-  Widget _buildLogoTab(double effLogo) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _label("LOGO CENTRAL"),
-      Container(
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12)),
-        child: Column(children: [
-          GestureDetector(
-            onTap: () async {
-              HapticFeedback.lightImpact();
-              final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-              if (img != null) await _processLogo(File(img.path));
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: _logoBytes != null
-                  // Logo cargado: imagen grande centrada + controles debajo
-                  ? Column(children: [
+  Widget _buildLogoTab(double effLogo) {
+    final hasLogo = _logoBytes != null;
+    final isTextMode = _logoInputMode == "Texto";
+    final isTextGradient = _logoTextColorMode == "Degradado";
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label("LOGO CENTRAL"),
+        _chipsRow(["Imagen", "Texto"], _logoInputMode, (v) {
+          setState(() {
+            _logoInputMode = v;
+            if (v == "Imagen" && _activeLogoKind == "Texto") {
+              _clearCurrentLogo();
+            }
+            if (v == "Texto" && _activeLogoKind == "Imagen" && _logoTextCtrl.text.trim().isEmpty) {
+              _clearCurrentLogo();
+            }
+          });
+          if (v == "Texto" && _logoTextCtrl.text.trim().isNotEmpty) {
+            _renderTextLogo();
+          }
+        }),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              if (isTextMode)
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
                           width: double.infinity,
                           height: 130,
                           color: const Color(0xFFF2F2F2),
-                          child: Image.memory(_logoBytes!, fit: BoxFit.contain),
+                          alignment: Alignment.center,
+                          child: hasLogo
+                              ? Image.memory(_logoBytes!, fit: BoxFit.contain)
+                              : Text(
+                                  "Tu texto",
+                                  textAlign: TextAlign.center,
+                                  style: _currentLogoTextStyle(
+                                    28,
+                                    shaderRect: const Rect.fromLTWH(0, 0, 320, 120),
+                                  ),
+                                ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(children: [
-                        const Icon(Icons.check_circle, size: 15, color: Color(0xFF22AA66)),
-                        const SizedBox(width: 6),
-                        const Expanded(child: Text("Logo cargado · toca para cambiar",
-                            style: TextStyle(fontSize: 12, color: Color(0xFF666666)))),
-                        GestureDetector(
-                          onTap: () => setState(() {
-                            _logoBytes = null; _logoImage = null; _outerMask = null;
-                          }),
-                          child: Container(
-                            width: 30, height: 30,
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(8)),
-                            child: Icon(Icons.close, size: 15, color: Colors.red.shade400),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _logoTextCtrl,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          hintText: "Escribe un texto para el centro",
+                          hintStyle: const TextStyle(color: Color(0xFFBBBBBB), fontSize: 14),
+                          filled: true,
+                          fillColor: const Color(0xFFF8F8F8),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF111111), width: 1.4),
                           ),
                         ),
-                      ]),
-                    ])
-                  // Sin logo: tile simple
-                  : Row(children: [
-                      Container(
-                        width: 44, height: 44,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF2F2F2),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.image_outlined, size: 20,
-                            color: Color(0xFF888888)),
+                        onChanged: (_) {
+                          setState(() {});
+                          _renderTextLogo();
+                        },
                       ),
-                      const SizedBox(width: 12),
-                      const Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Cargar logo", style: TextStyle(fontSize: 14,
-                              fontWeight: FontWeight.w600, color: Color(0xFF222222))),
-                          Text("PNG o JPG",
-                              style: TextStyle(fontSize: 11, color: Color(0xFFAAAAAA))),
-                        ],
-                      )),
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 13,
-                          color: Color(0xFFCCCCCC)),
-                    ]),
-            ),
+                      const SizedBox(height: 14),
+                      _label("COLOR DEL TEXTO"),
+                      _chipsRow(["Sólido", "Degradado"], _logoTextColorMode, (v) {
+                        setState(() => _logoTextColorMode = v);
+                        _renderTextLogo();
+                      }),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F8F8),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text("Color 1", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+                            const SizedBox(width: 10),
+                            _colorDot(_logoTextC1, (c) {
+                              setState(() => _logoTextC1 = c);
+                              _renderTextLogo();
+                            }),
+                            if (isTextGradient) ...[
+                              const SizedBox(width: 20),
+                              const Text("Color 2", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF555555))),
+                              const SizedBox(width: 10),
+                              _colorDot(_logoTextC2, (c) {
+                                setState(() => _logoTextC2 = c);
+                                _renderTextLogo();
+                              }),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (isTextGradient) ...[
+                        const SizedBox(height: 10),
+                        _label("DIRECCIÓN DEL DEGRADADO"),
+                        _chipsRow(["Vertical", "Horizontal", "Diagonal"], _logoTextGradDir, (v) {
+                          setState(() => _logoTextGradDir = v);
+                          _renderTextLogo();
+                        }),
+                      ],
+                      const SizedBox(height: 14),
+                      _label("TIPOGRAFÍA"),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _textFontOptions.map((fontName) {
+                          final sel = fontName == _logoFont;
+                          return GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(() => _logoFont = fontName);
+                              _renderTextLogo();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 140),
+                              width: 98,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: sel ? const Color(0xFF111111) : const Color(0xFFF8F8F8),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: sel ? const Color(0xFF111111) : const Color(0xFFE6E6E6),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    "Aa",
+                                    style: _logoTextStyleFor(fontName, 18).copyWith(
+                                      color: sel ? Colors.white : const Color(0xFF111111),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    fontName,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: sel ? Colors.white70 : const Color(0xFF666666),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      if (hasLogo) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Icon(Icons.check_circle, size: 15, color: Color(0xFF22AA66)),
+                            const SizedBox(width: 6),
+                            const Expanded(
+                              child: Text(
+                                "Texto listo para usar como logo",
+                                style: TextStyle(fontSize: 12, color: Color(0xFF666666)),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _clearCurrentLogo(clearText: true)),
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(Icons.close, size: 15, color: Colors.red.shade400),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+                    if (img != null) await _processLogo(File(img.path));
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: hasLogo
+                        ? Column(children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                width: double.infinity,
+                                height: 130,
+                                color: const Color(0xFFF2F2F2),
+                                child: Image.memory(_logoBytes!, fit: BoxFit.contain),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(children: [
+                              const Icon(Icons.check_circle, size: 15, color: Color(0xFF22AA66)),
+                              const SizedBox(width: 6),
+                              const Expanded(child: Text("Logo cargado · toca para cambiar",
+                                  style: TextStyle(fontSize: 12, color: Color(0xFF666666)))),
+                              GestureDetector(
+                                onTap: () => setState(() => _clearCurrentLogo()),
+                                child: Container(
+                                  width: 30, height: 30,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8)),
+                                  child: Icon(Icons.close, size: 15, color: Colors.red.shade400),
+                                ),
+                              ),
+                            ]),
+                          ])
+                        : Row(children: [
+                            Container(
+                              width: 44, height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF2F2F2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.image_outlined, size: 20,
+                                  color: Color(0xFF888888)),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Cargar logo", style: TextStyle(fontSize: 14,
+                                    fontWeight: FontWeight.w600, color: Color(0xFF222222))),
+                                Text("PNG o JPG",
+                                    style: TextStyle(fontSize: 11, color: Color(0xFFAAAAAA))),
+                              ],
+                            )),
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 13,
+                                color: Color(0xFFCCCCCC)),
+                          ]),
+                  ),
+                ),
+              if (hasLogo) ...[
+                const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(children: [
+                    _sliderRow("Tamaño", "${effLogo.toInt()}px",
+                        _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
+                    const SizedBox(height: 10),
+                    _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
+                        _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
+                  ]),
+                ),
+              ],
+            ],
           ),
-          if (_logoBytes != null) ...[
-            const Divider(height: 1, color: Color(0xFFF0F0F0)),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(children: [
-                _sliderRow("Tamaño", "${effLogo.toInt()}px",
-                    _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
-                const SizedBox(height: 10),
-                _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
-                    _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
-              ]),
-            ),
-          ],
-        ]),
-      ),
-    ],
-  );
+        ),
+      ],
+    );
+  }
 
   // ── Tab Fondo ─────────────────────────────────────────────────────
   Widget _buildFondoTab() => Column(
