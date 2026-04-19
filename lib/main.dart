@@ -268,7 +268,7 @@ String _splitDir = "Vertical";
     final qr = _buildQrImage(data);
     if (qr == null) return _logoSize;
     final maxPx = math.max(30.0,
-        _safeLogoMax(modules: qr.moduleCount, auraModules: _auraSize));
+        _safeLogoMax(modules: qr.moduleCount, auraModules: effectiveLogoAuraModules(_auraSize)));
     return _logoSize.clamp(30.0, maxPx);
   }
 
@@ -316,25 +316,37 @@ String _splitDir = "Vertical";
     return base.copyWith(color: _logoTextC1);
   }
 
-  Future<void> _applyPreparedLogo(img_lib.Image img, Uint8List png,
+  img_lib.Image _cropToAlphaBounds(img_lib.Image src, {int alphaThreshold = 24, int pad = 2}) {
+    int minX = src.width, minY = src.height, maxX = -1, maxY = -1;
+    for (int y = 0; y < src.height; y++) {
+      for (int x = 0; x < src.width; x++) {
+        if (src.getPixel(x, y).a > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) return src;
+    minX = math.max(0, minX - pad);
+    minY = math.max(0, minY - pad);
+    maxX = math.min(src.width - 1, maxX + pad);
+    maxY = math.min(src.height - 1, maxY + pad);
+    return img_lib.copyCrop(
+      src,
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    );
+  }
+
+  Future<void> _applyPreparedLogo(img_lib.Image img,
       {bool syncQrPalette = false, required String kind}) async {
-    final w = img.width; final h = img.height;
-    final rB = List.generate(h, (_) => List.filled(w, false));
-    for (int y = 0; y < h; y++) {
-      int fx = -1, lx = -1;
-      for (int x = 0; x < w; x++) {
-        if (img.getPixel(x, y).a > 30) { if (fx == -1) fx = x; lx = x; }
-      }
-      if (fx != -1) for (int x = fx; x <= lx; x++) rB[y][x] = true;
-    }
-    final mask = List.generate(h, (_) => List.filled(w, false));
-    for (int x = 0; x < w; x++) {
-      int fy = -1, ly = -1;
-      for (int y = 0; y < h; y++) {
-        if (img.getPixel(x, y).a > 30) { if (fy == -1) fy = y; ly = y; }
-      }
-      if (fy != -1) for (int y = fy; y <= ly; y++) { if (rB[y][x]) mask[y][x] = true; }
-    }
+    final cropped = _cropToAlphaBounds(img.convert(numChannels: 4));
+    final mask = _maskFromAlpha(cropped, alphaThreshold: 20);
+    final png = Uint8List.fromList(img_lib.encodePng(cropped));
 
     PaletteGenerator? palette;
     if (syncQrPalette) {
@@ -344,14 +356,14 @@ String _splitDir = "Vertical";
     if (!mounted) return;
     setState(() {
       _logoBytes = png;
-      _logoImage = img;
+      _logoImage = cropped;
       _outerMask = mask;
       _activeLogoKind = kind;
       if (syncQrPalette && palette != null) {
-        _qrC1 = palette!.darkVibrantColor?.color ??
-            palette!.darkMutedColor?.color ??
-            palette!.dominantColor?.color ?? Colors.black;
-        _qrC2 = palette!.vibrantColor?.color ?? palette!.lightVibrantColor?.color ?? _qrC1;
+        _qrC1 = palette.darkVibrantColor?.color ??
+            palette.darkMutedColor?.color ??
+            palette.dominantColor?.color ?? Colors.black;
+        _qrC2 = palette.vibrantColor?.color ?? palette.lightVibrantColor?.color ?? _qrC1;
         _qrColorMode = "Automático (Logo)";
       }
     });
@@ -399,7 +411,7 @@ String _splitDir = "Vertical";
     img_lib.Image? decoded = img_lib.decodeImage(png);
     if (decoded == null) return;
     decoded = decoded.convert(numChannels: 4);
-    await _applyPreparedLogo(decoded, png, kind: "Texto");
+    await _applyPreparedLogo(decoded, kind: "Texto");
   }
 
   Future<void> _processLogo(File file) async {
@@ -409,8 +421,7 @@ String _splitDir = "Vertical";
     img = img.convert(numChannels: 4);
     final ext = file.path.toLowerCase();
     if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
-    final png = Uint8List.fromList(img_lib.encodePng(img));
-    await _applyPreparedLogo(img, png, syncQrPalette: true, kind: "Imagen");
+    await _applyPreparedLogo(img, syncQrPalette: true, kind: "Imagen");
   }
 
   bool _hasRealTransparency(img_lib.Image src) {
@@ -1962,6 +1973,21 @@ String _splitDir = "Vertical";
     return LinearGradient(colors: [c1, c2], begin: b, end: e);
   }
 
+  Rect? _logoRectForCanvas(double qrSize, double logoMaxSide) {
+    if (_logoBytes == null || _outerMask == null || logoMaxSide <= 0) return null;
+    final layout = buildCenteredLogoLayout(
+      outerMask: _outerMask,
+      logoSizeFraction: logoMaxSide / qrSize,
+    );
+    if (layout.width <= 0 || layout.height <= 0) return null;
+    return Rect.fromLTWH(
+      layout.left * qrSize,
+      layout.top * qrSize,
+      layout.width * qrSize,
+      layout.height * qrSize,
+    );
+  }
+
  Future<Directory> _getExportDir() async {
   if (Platform.isAndroid) {
     final dirs = await getExternalStorageDirectories(
@@ -2244,17 +2270,20 @@ String _buildSvg() {
 
     // ── Logo encima (dentro del área QR) ────────────────────────────
     if (_logoBytes != null && !isShape) {
-      final codec = await ui.instantiateImageCodec(
-        _logoBytes!,
-        targetWidth: effLogo.toInt(),
-        targetHeight: effLogo.toInt(),
-      );
-      final frame = await codec.getNextFrame();
-      canvas.drawImage(
-        frame.image,
-        Offset((qrSize - effLogo) / 2, (qrSize - effLogo) / 2),
-        Paint()..isAntiAlias = true,
-      );
+      final rect = _logoRectForCanvas(qrSize, effLogo);
+      if (rect != null) {
+        final codec = await ui.instantiateImageCodec(
+          _logoBytes!,
+          targetWidth: math.max(1, rect.width.round()),
+          targetHeight: math.max(1, rect.height.round()),
+        );
+        final frame = await codec.getNextFrame();
+        canvas.drawImage(
+          frame.image,
+          rect.topLeft,
+          Paint()..isAntiAlias = true,
+        );
+      }
     }
 
     canvas.restore();
@@ -2318,17 +2347,20 @@ Future<Uint8List> _renderPreviewPng() async {
   }
 
   if (_logoBytes != null && !isShape) {
-    final codec = await ui.instantiateImageCodec(
-      _logoBytes!,
-      targetWidth: effLogo.toInt(),
-      targetHeight: effLogo.toInt(),
-    );
-    final frame = await codec.getNextFrame();
-    canvas.drawImage(
-      frame.image,
-      Offset((qrSize - effLogo) / 2, (qrSize - effLogo) / 2),
-      Paint()..isAntiAlias = true,
-    );
+    final rect = _logoRectForCanvas(qrSize, effLogo);
+    if (rect != null) {
+      final codec = await ui.instantiateImageCodec(
+        _logoBytes!,
+        targetWidth: math.max(1, rect.width.round()),
+        targetHeight: math.max(1, rect.height.round()),
+      );
+      final frame = await codec.getNextFrame();
+      canvas.drawImage(
+        frame.image,
+        rect.topLeft,
+        Paint()..isAntiAlias = true,
+      );
+    }
   }
 
   final picture = recorder.endRecording();
@@ -2804,7 +2836,7 @@ class QrMasterPainter extends CustomPainter {
     if (qr == null) { _err(canvas, size); return; }
     final int m = qr.moduleCount;
     final double t = size.width / m;
-    final double effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
+    final double effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: effectiveLogoAuraModules(auraSize)));
     final paint = Paint()..isAntiAlias = true;
     ui.Shader? grad;
     if (qrMode != "Sólido (Un Color)") {
@@ -2959,7 +2991,7 @@ class QrAdvancedPainter extends CustomPainter {
 
   List<List<bool>> _buildLogoExcl(int m, double t) {
     if (logoSize <= 0) return List.generate(m, (_) => List.filled(m, false));
-    final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: auraSize));
+    final effLogo = logoSize.clamp(30.0, _safeLogoMax(modules: m, auraModules: effectiveLogoAuraModules(auraSize)));
     return buildCenteredLogoExclusion(
       modules: m,
       outerMask: outerMask,

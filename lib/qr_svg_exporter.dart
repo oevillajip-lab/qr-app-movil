@@ -147,10 +147,16 @@ class QrSvgExporter {
 
       if (logoBytes != null && logoSizeFrac > 0) {
         final b64 = base64Encode(logoBytes);
-        final double ls = size * logoSizeFrac;
-        final double lo = (size - ls) / 2;
-        buf.writeln('<image x="${_f(lo)}" y="${_f(lo)}" '
-            'width="${_f(ls)}" height="${_f(ls)}" '
+        final layout = buildCenteredLogoLayout(
+          outerMask: outerMask,
+          logoSizeFraction: logoSizeFrac,
+        );
+        final double x = size * layout.left;
+        final double y = size * layout.top;
+        final double w = size * layout.width;
+        final double h = size * layout.height;
+        buf.writeln('<image x="${_f(x)}" y="${_f(y)}" '
+            'width="${_f(w)}" height="${_f(h)}" '
             'preserveAspectRatio="xMidYMid meet" '
             'href="data:image/png;base64,$b64" '
             'xlink:href="data:image/png;base64,$b64"/>');
