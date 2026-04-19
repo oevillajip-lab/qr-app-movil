@@ -50,7 +50,7 @@ double _safeLogoMax({
   required int modules,
   required double auraModules,
   double canvasSize = 270.0,
-  double hardMax = 85.0,
+  double hardMax = 110.0,
   double hardMin = 30.0,
 }) {
   final double auraFrac = (auraModules * 2.0) / modules.toDouble();
@@ -267,9 +267,22 @@ String _splitDir = "Vertical";
     if (data.isEmpty) return _logoSize;
     final qr = _buildQrImage(data);
     if (qr == null) return _logoSize;
-    final maxPx = math.max(30.0,
-        _safeLogoMax(modules: qr.moduleCount, auraModules: effectiveLogoAuraModules(_auraSize)));
-    return _logoSize.clamp(30.0, maxPx);
+
+    final baseMax = math.max(
+      30.0,
+      _safeLogoMax(modules: qr.moduleCount, auraModules: effectiveLogoAuraModules(_auraSize)),
+    );
+
+    double boostedMax = baseMax;
+    if (_logoImage != null) {
+      final w = _logoImage!.width.toDouble();
+      final h = _logoImage!.height.toDouble();
+      final ratio = math.max(w / h, h / w);
+      final boost = (1.0 + (math.min(ratio, 4.0) - 1.0) * 0.20).clamp(1.0, 1.45);
+      boostedMax = (baseMax * boost).clamp(30.0, 120.0);
+    }
+
+    return _logoSize.clamp(30.0, boostedMax);
   }
 
   void _clearCurrentLogo({bool clearText = false}) {
@@ -1595,7 +1608,7 @@ String _splitDir = "Vertical";
                   padding: const EdgeInsets.all(14),
                   child: Column(children: [
                     _sliderRow("Tamaño", "${effLogo.toInt()}px",
-                        _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
+                        _logoSize, 30, 110, 16, (v) => setState(() => _logoSize = v)),
                     const SizedBox(height: 10),
                     _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
                         _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),

@@ -39,7 +39,7 @@ CenteredLogoLayout buildCenteredLogoLayout({
 double effectiveLogoAuraModules(double uiValue) {
   if (uiValue <= 0) return 0.0;
   final normalized = ((uiValue - 1.0) / 2.0).clamp(0.0, 1.0);
-  return 0.18 + (normalized * 0.86);
+  return 0.10 + (normalized * 0.32);
 }
 
 List<List<bool>> buildCenteredLogoExclusion({
@@ -53,58 +53,66 @@ List<List<bool>> buildCenteredLogoExclusion({
     return excl;
   }
 
-  final int h = outerMask.length;
-  final int w = outerMask.first.length;
+  final int maskH = outerMask.length;
+  final int maskW = outerMask.first.length;
   final layout = buildCenteredLogoLayout(
     outerMask: outerMask,
     logoSizeFraction: logoSizeFraction,
   );
   if (layout.width <= 0 || layout.height <= 0) return excl;
 
-  final base = List.generate(modules, (_) => List.filled(modules, false));
-  const samples = [0.12, 0.30, 0.50, 0.70, 0.88];
+  const int supersample = 8;
+  final int hiSize = modules * supersample;
+  final hiMask = List.generate(hiSize, (_) => List.filled(hiSize, false));
+
+  for (int y = 0; y < hiSize; y++) {
+    final double ny = (y + 0.5) / hiSize;
+    if (ny < layout.top || ny > layout.top + layout.height) continue;
+    for (int x = 0; x < hiSize; x++) {
+      final double nx = (x + 0.5) / hiSize;
+      if (nx < layout.left || nx > layout.left + layout.width) continue;
+
+      final double u = (nx - layout.left) / layout.width;
+      final double v = (ny - layout.top) / layout.height;
+      final int px = (u * maskW).clamp(0.0, maskW - 1.0).toInt();
+      final int py = (v * maskH).clamp(0.0, maskH - 1.0).toInt();
+      hiMask[y][x] = outerMask[py][px];
+    }
+  }
+
+  final double radius = effectiveLogoAuraModules(logoAuraModules) * supersample;
+  final int ceilRadius = math.max(1, radius.ceil());
+  final dilated = List.generate(hiSize, (_) => List.filled(hiSize, false));
+
+  for (int y = 0; y < hiSize; y++) {
+    for (int x = 0; x < hiSize; x++) {
+      if (!hiMask[y][x]) continue;
+      for (int dy = -ceilRadius; dy <= ceilRadius; dy++) {
+        final int ny = y + dy;
+        if (ny < 0 || ny >= hiSize) continue;
+        for (int dx = -ceilRadius; dx <= ceilRadius; dx++) {
+          final int nx = x + dx;
+          if (nx < 0 || nx >= hiSize) continue;
+          final double dist = math.sqrt((dx * dx + dy * dy).toDouble());
+          if (dist <= radius + 0.001) {
+            dilated[ny][nx] = true;
+          }
+        }
+      }
+    }
+  }
 
   for (int r = 0; r < modules; r++) {
     for (int c = 0; c < modules; c++) {
       bool hit = false;
-      for (final dy in samples) {
-        for (final dx in samples) {
-          final double nx = (c + dx) / modules;
-          final double ny = (r + dy) / modules;
-          if (nx < layout.left || nx > layout.left + layout.width) continue;
-          if (ny < layout.top || ny > layout.top + layout.height) continue;
-
-          final double u = (nx - layout.left) / layout.width;
-          final double v = (ny - layout.top) / layout.height;
-          final int px = (u * w).clamp(0.0, w - 1.0).toInt();
-          final int py = (v * h).clamp(0.0, h - 1.0).toInt();
-          if (outerMask[py][px]) {
+      for (int sy = 0; sy < supersample && !hit; sy++) {
+        for (int sx = 0; sx < supersample && !hit; sx++) {
+          if (dilated[r * supersample + sy][c * supersample + sx]) {
             hit = true;
-            break;
-          }
-        }
-        if (hit) break;
-      }
-      if (hit) base[r][c] = true;
-    }
-  }
-
-  final double radius = effectiveLogoAuraModules(logoAuraModules);
-  final int ceilRadius = radius.ceil();
-  for (int r = 0; r < modules; r++) {
-    for (int c = 0; c < modules; c++) {
-      if (!base[r][c]) continue;
-      for (int dr = -ceilRadius; dr <= ceilRadius; dr++) {
-        for (int dc = -ceilRadius; dc <= ceilRadius; dc++) {
-          final int nr = r + dr;
-          final int nc = c + dc;
-          if (nr < 0 || nr >= modules || nc < 0 || nc >= modules) continue;
-          final double dist = math.sqrt((dr * dr + dc * dc).toDouble());
-          if (dist <= radius + 0.001) {
-            excl[nr][nc] = true;
           }
         }
       }
+      excl[r][c] = hit;
     }
   }
 
