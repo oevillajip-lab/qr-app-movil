@@ -36,10 +36,16 @@ CenteredLogoLayout buildCenteredLogoLayout({
   );
 }
 
+double effectiveLogoPaddingPx(double uiValue) {
+  if (uiValue <= 0) return 0.0;
+  final normalized = ((uiValue - 1.0) / 2.0).clamp(0.0, 1.0);
+  return 1.0 + (normalized * 9.0);
+}
+
 double effectiveLogoAuraModules(double uiValue) {
   if (uiValue <= 0) return 0.0;
   final normalized = ((uiValue - 1.0) / 2.0).clamp(0.0, 1.0);
-  return 0.10 + (normalized * 0.32);
+  return 0.14 + (normalized * 0.42);
 }
 
 List<List<bool>> buildCenteredLogoExclusion({
@@ -80,7 +86,8 @@ List<List<bool>> buildCenteredLogoExclusion({
     }
   }
 
-  final double radius = effectiveLogoAuraModules(logoAuraModules) * supersample;
+  final double paddingPx = effectiveLogoPaddingPx(logoAuraModules);
+  final double radius = math.max(1.0, (paddingPx / 270.0) * hiSize);
   final int ceilRadius = math.max(1, radius.ceil());
   final dilated = List.generate(hiSize, (_) => List.filled(hiSize, false));
 

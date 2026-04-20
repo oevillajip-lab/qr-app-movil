@@ -50,8 +50,8 @@ double _safeLogoMax({
   required int modules,
   required double auraModules,
   double canvasSize = 270.0,
-  double hardMax = 110.0,
-  double hardMin = 30.0,
+  double hardMax = 130.0,
+  double hardMin = 42.0,
 }) {
   final double auraFrac = (auraModules * 2.0) / modules.toDouble();
   final double maxFrac = (math.sqrt(0.27) - auraFrac).clamp(0.08, 0.519);
@@ -205,7 +205,7 @@ class _MainScreenState extends State<MainScreen>
   img_lib.Image? _shapeImage;
   List<List<bool>>? _shapeMask;
 
-  double _logoSize = 60.0;
+  double _logoSize = 72.0;
 double _auraSize = 1.5;
 double _shapeGap = 0.8;
 String _mapSubStyle = "Liquid Pro (Gusano)";
@@ -261,16 +261,44 @@ String _splitDir = "Vertical";
     super.dispose();
   }
 
+  double _logoMinPx() {
+    double minPx = 42.0;
+    if (_logoImage != null) {
+      final w = _logoImage!.width.toDouble();
+      final h = _logoImage!.height.toDouble();
+      final ratio = math.max(w / h, h / w);
+      minPx = (42.0 + (math.min(ratio, 4.0) - 1.0) * 8.0).clamp(42.0, 66.0);
+    }
+    return minPx;
+  }
+
+  double _logoSliderMaxPx() {
+    double maxPx = 130.0;
+    if (_logoImage != null) {
+      final w = _logoImage!.width.toDouble();
+      final h = _logoImage!.height.toDouble();
+      final ratio = math.max(w / h, h / w);
+      maxPx = (130.0 + (math.min(ratio, 4.0) - 1.0) * 6.0).clamp(130.0, 148.0);
+    }
+    return maxPx;
+  }
+
   double _effectiveLogo(bool isShape) {
     if (isShape) return 0.0;
+    final minPx = _logoMinPx();
     final data = _getFinalData();
-    if (data.isEmpty) return _logoSize;
+    if (data.isEmpty) return _logoSize.clamp(minPx, _logoSliderMaxPx());
     final qr = _buildQrImage(data);
-    if (qr == null) return _logoSize;
+    if (qr == null) return _logoSize.clamp(minPx, _logoSliderMaxPx());
 
     final baseMax = math.max(
-      30.0,
-      _safeLogoMax(modules: qr.moduleCount, auraModules: effectiveLogoAuraModules(_auraSize)),
+      minPx,
+      _safeLogoMax(
+        modules: qr.moduleCount,
+        auraModules: effectiveLogoAuraModules(_auraSize),
+        hardMin: minPx,
+        hardMax: _logoSliderMaxPx(),
+      ),
     );
 
     double boostedMax = baseMax;
@@ -278,11 +306,11 @@ String _splitDir = "Vertical";
       final w = _logoImage!.width.toDouble();
       final h = _logoImage!.height.toDouble();
       final ratio = math.max(w / h, h / w);
-      final boost = (1.0 + (math.min(ratio, 4.0) - 1.0) * 0.20).clamp(1.0, 1.45);
-      boostedMax = (baseMax * boost).clamp(30.0, 120.0);
+      final boost = (1.0 + (math.min(ratio, 4.0) - 1.0) * 0.16).clamp(1.0, 1.35);
+      boostedMax = (baseMax * boost).clamp(minPx, _logoSliderMaxPx());
     }
 
-    return _logoSize.clamp(30.0, boostedMax);
+    return _logoSize.clamp(minPx, boostedMax);
   }
 
   void _clearCurrentLogo({bool clearText = false}) {
@@ -367,10 +395,17 @@ String _splitDir = "Vertical";
     }
 
     if (!mounted) return;
+    final w = cropped.width.toDouble();
+    final h = cropped.height.toDouble();
+    final ratio = math.max(w / h, h / w);
+    final minTarget = (42.0 + (math.min(ratio, 4.0) - 1.0) * 8.0).clamp(42.0, 66.0);
+    final maxTarget = (130.0 + (math.min(ratio, 4.0) - 1.0) * 6.0).clamp(130.0, 148.0);
+
     setState(() {
       _logoBytes = png;
       _logoImage = cropped;
       _outerMask = mask;
+      _logoSize = _logoSize.clamp(minTarget, maxTarget);
       _activeLogoKind = kind;
       if (syncQrPalette && palette != null) {
         _qrC1 = palette.darkVibrantColor?.color ??
@@ -1607,11 +1642,12 @@ String _splitDir = "Vertical";
                 Padding(
                   padding: const EdgeInsets.all(14),
                   child: Column(children: [
-                    _sliderRow("Tamaño", "${effLogo.toInt()}px",
-                        _logoSize, 30, 110, 16, (v) => setState(() => _logoSize = v)),
+                    _sliderRow("Tamaño", "${effLogo.toInt()} px",
+                        _logoSize.clamp(_logoMinPx(), _logoSliderMaxPx()), _logoMinPx(), _logoSliderMaxPx(), 18,
+                        (v) => setState(() => _logoSize = v)),
                     const SizedBox(height: 10),
-                    _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)} mód.",
-                        _auraSize, 1.0, 3.0, 4, (v) => setState(() => _auraSize = v)),
+                    _sliderRow("Separación", "${effectiveLogoPaddingPx(_auraSize).round()} px",
+                        _auraSize, 1.0, 3.0, 9, (v) => setState(() => _auraSize = v)),
                   ]),
                 ),
               ],
