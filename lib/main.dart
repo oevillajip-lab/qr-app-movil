@@ -286,11 +286,10 @@ String _splitDir = "Vertical";
   }
 
   double _effectiveAuraModules() {
-    // Bug 2 Fix: Rango ajustado 0.0 – 0.6 módulos para gap fino y estético.
-    // Slider _auraSize: 0.0 (sin gap) a 5.0 (gap grande).
-    final uiGap = _auraSize.clamp(0.0, 5.0);
-    final normalized = (uiGap / 5.0).clamp(0.0, 1.0);
-    return normalized * 0.60; // 0.0 a 0.6 módulos
+    // Bug 2 Fix real: Mapear el slider (0.0 a 5.0) a (0.0 a 4.0) módulos.
+    // Esto asegura que safeRX sea >= 1.0 para valores visibles, permitiendo
+    // que la dilatación matemática de _dilateModuleMask funcione correctamente.
+    return _auraSize * 0.8;
   }
 
   double _effectiveLogo(bool isShape) {
@@ -320,24 +319,39 @@ String _splitDir = "Vertical";
 
   Future<void> _processLogo(File file) async {
     final bytes = await file.readAsBytes();
-    img_lib.Image? img = img_lib.decodeImage(bytes);
-    if (img == null) return;
-    img = img.convert(numChannels: 4);
+    img_lib.Image? originalImg = img_lib.decodeImage(bytes);
+    if (originalImg == null) return;
+    originalImg = originalImg.convert(numChannels: 4);
     final ext = file.path.toLowerCase();
-    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
-    final w = img.width;
-    final h = img.height;
+    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) {
+        originalImg = _removeWhiteBg(originalImg);
+    }
 
-    // ── Paso 1: Crear máscara binaria de píxeles opacos ──────────────
+    // ── DOWN-SCALE PARA PROCESAMIENTO ULTRA-RÁPIDO ──────────────
+    // Trabajar con la imagen a 2000px es muy lento en Dart. 
+    // Achicamos a un máximo de 150px solo para generar la máscara.
+    int tw = originalImg.width;
+    int th = originalImg.height;
+    if (tw > 150 || th > 150) {
+      if (tw > th) {
+        th = (th * 150 / tw).round();
+        tw = 150;
+      } else {
+        tw = (tw * 150 / th).round();
+        th = 150;
+      }
+    }
+    final maskImg = img_lib.copyResize(originalImg, width: tw, height: th, interpolation: img_lib.Interpolation.average);
+    final w = maskImg.width;
+    final h = maskImg.height;
+
+    // ── Paso 1: Máscara binaria opaca ──────────────
     final opaque = List.generate(h, (y) =>
-        List.generate(w, (x) => img!.getPixel(x, y).a > 30));
+        List.generate(w, (x) => maskImg.getPixel(x, y).a > 30));
 
     // ── Paso 2: Cierre morfológico (dilate → erode) ──────────────────
-    // Cierra los huecos entre aspas, letras separadas, gaps del logo.
-    // El kernel es ~3% de la dimensión menor de la imagen.
-    final int kernelRadius = math.max(3, (math.min(w, h) * 0.03).round());
+    final int kernelRadius = math.max(1, (math.min(w, h) * 0.05).round());
 
-    // Dilate: expande los píxeles opacos para cerrar gaps
     final dilated = List.generate(h, (_) => List.filled(w, false));
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
@@ -348,47 +362,36 @@ String _splitDir = "Vertical";
         final int x1 = math.min(w - 1, x + kernelRadius);
         for (int ny = y0; ny <= y1; ny++) {
           for (int nx = x0; nx <= x1; nx++) {
-            final double dx = (nx - x) / kernelRadius;
-            final double dy = (ny - y) / kernelRadius;
-            if (dx * dx + dy * dy <= 1.0) {
-              dilated[ny][nx] = true;
-            }
+            dilated[ny][nx] = true;
           }
         }
       }
     }
 
-    // Erode: contrae de vuelta para restaurar el tamaño original de la silueta
     final closed = List.generate(h, (_) => List.filled(w, true));
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
-        if (dilated[y][x]) continue; // no-opaco en dilated
+        if (dilated[y][x]) continue;
         final int y0 = math.max(0, y - kernelRadius);
         final int y1 = math.min(h - 1, y + kernelRadius);
         final int x0 = math.max(0, x - kernelRadius);
         final int x1 = math.min(w - 1, x + kernelRadius);
         for (int ny = y0; ny <= y1; ny++) {
           for (int nx = x0; nx <= x1; nx++) {
-            final double dx = (nx - x) / kernelRadius;
-            final double dy = (ny - y) / kernelRadius;
-            if (dx * dx + dy * dy <= 1.0) {
-              closed[ny][nx] = false;
-            }
+            closed[ny][nx] = false;
           }
         }
       }
     }
 
-    // ── Paso 3: BFS flood fill desde los bordes sobre la máscara cerrada ─
-    // Todo lo transparente (closed=false) accesible desde el borde = exterior.
-    // Lo que NO es alcanzable = interior del logo (incluyendo huecos cerrados).
+    // ── Paso 3: BFS flood fill desde los bordes ─
     final exterior = List.generate(h, (_) => List.filled(w, false));
     final queue = <List<int>>[];
 
     void enqueueFlood(int x, int y) {
       if (x < 0 || x >= w || y < 0 || y >= h) return;
       if (exterior[y][x]) return;
-      if (closed[y][x]) return; // es parte de la silueta cerrada → no es exterior
+      if (closed[y][x]) return;
       exterior[y][x] = true;
       queue.add([x, y]);
     }
@@ -396,22 +399,22 @@ String _splitDir = "Vertical";
     for (int x = 0; x < w; x++) { enqueueFlood(x, 0); enqueueFlood(x, h - 1); }
     for (int y = 0; y < h; y++) { enqueueFlood(0, y); enqueueFlood(w - 1, y); }
 
-    while (queue.isNotEmpty) {
-      final p = queue.removeLast();
+    int head = 0;
+    while (head < queue.length) {
+      final p = queue[head++];
       enqueueFlood(p[0] + 1, p[1]);
       enqueueFlood(p[0] - 1, p[1]);
       enqueueFlood(p[0], p[1] + 1);
       enqueueFlood(p[0], p[1] - 1);
     }
 
-    // ── Paso 4: Máscara final = todo lo que NO es exterior ───────────
-    // Usa los píxeles opacos originales + los huecos internos cerrados.
+    // ── Paso 4: Máscara final ───────────
     final mask = List.generate(h, (y) => List.generate(w, (x) => !exterior[y][x]));
 
-    final png = Uint8List.fromList(img_lib.encodePng(img));
+    final png = Uint8List.fromList(img_lib.encodePng(originalImg));
     final palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
     setState(() {
-      _logoBytes = png; _logoImage = img; _outerMask = mask;
+      _logoBytes = png; _logoImage = originalImg; _outerMask = mask;
       _qrC1 = palette.darkVibrantColor?.color ??
           palette.darkMutedColor?.color ??
           palette.dominantColor?.color ?? Colors.black;
@@ -1957,36 +1960,43 @@ Future<void> _addHistoryEntry({
   } catch (_) {}
 }
 
-Future<void> _saveHistoryImage(QrHistoryItem item) async {
-  try {
-    final file = File(item.pngPath);
-    if (!await file.exists()) throw 'PNG no disponible';
-    final pngBytes = await file.readAsBytes();
-    await ImageGallerySaver.saveImage(
-      pngBytes,
-      name: 'QR_Historial_${item.id}',
-    );
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Imagen PNG guardada en galería'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.black,
-        ),
-      );
-    }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al guardar imagen: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+  Future<void> _saveHistoryImage(Map<String, dynamic> item) async {
+    try {
+      final pngBytes = item['pngBytes'] as Uint8List?;
+      if (pngBytes != null) {
+        final String fileName = "QR_Historial_${DateTime.now().millisecondsSinceEpoch}";
+        // Mismo fix que el export principal para transparencia
+        if (_bgMode == "Transparente") {
+          final tmpDir = await getTemporaryDirectory();
+          final pngFile = File('${tmpDir.path}/$fileName.png');
+          await pngFile.writeAsBytes(pngBytes);
+          await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
+        } else {
+          await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
+        }
+        
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Imagen PNG guardada en galería'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.black,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar imagen: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
-}
 
 Future<void> _saveHistorySvg(QrHistoryItem item) async {
   try {
@@ -2107,7 +2117,7 @@ Future<void> _showHistoryPreview(QrHistoryItem item) async {
                 'Descargar PNG', Icons.download_rounded,
                 () async {
                   Navigator.pop(ctx);
-                  await _saveHistoryImage(item);
+                  await _saveHistoryImage({'pngBytes': await file.readAsBytes()});
                 },
                 outlined: true,
               )),
@@ -2499,6 +2509,10 @@ Future<Uint8List> _renderPreviewPng() async {
 
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
+
+  // Bug 3 Fix: Limpiar explícitamente el canvas de preview para que
+  // tenga fondo transparente y se vea correcto en la UI.
+  canvas.drawColor(const Color(0x00000000), BlendMode.clear);
 
   if (isAdvStyle) {
     QrAdvancedPainter(
