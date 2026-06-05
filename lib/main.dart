@@ -1960,30 +1960,31 @@ Future<void> _addHistoryEntry({
   } catch (_) {}
 }
 
-  Future<void> _saveHistoryImage(Map<String, dynamic> item) async {
+  Future<void> _saveHistoryImage(QrHistoryItem item) async {
     try {
-      final pngBytes = item['pngBytes'] as Uint8List?;
-      if (pngBytes != null) {
-        final String fileName = "QR_Historial_${DateTime.now().millisecondsSinceEpoch}";
-        // Mismo fix que el export principal para transparencia
-        if (_bgMode == "Transparente") {
-          final tmpDir = await getTemporaryDirectory();
-          final pngFile = File('${tmpDir.path}/$fileName.png');
-          await pngFile.writeAsBytes(pngBytes);
-          await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
-        } else {
-          await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
-        }
-        
-        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Imagen PNG guardada en galería'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Colors.black,
-            ),
-          );
-        }
+      final file = File(item.pngPath);
+      if (!await file.exists()) throw 'PNG no disponible';
+      final pngBytes = await file.readAsBytes();
+      
+      final String fileName = "QR_Historial_${item.id}";
+      // Mismo fix que el export principal para transparencia
+      if (_bgMode == "Transparente") {
+        final tmpDir = await getTemporaryDirectory();
+        final pngFile = File('${tmpDir.path}/$fileName.png');
+        await pngFile.writeAsBytes(pngBytes);
+        await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
+      } else {
+        await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
+      }
+      
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Imagen PNG guardada en galería'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.black,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
