@@ -238,7 +238,7 @@ class _MainScreenState extends State<MainScreen>
   List<List<bool>>? _shapeMask;
 
   double _logoSize = 60.0;
-double _auraSize = 1.5;
+double _auraSize = 1.0; // Bug 2: default ajustado al nuevo rango 0.0–5.0
 double _shapeGap = 0.8;
 String _mapSubStyle = "Liquid Pro (Gusano)";
 String _advSubStyle = "Liquid Pro (Gusano)";
@@ -286,9 +286,11 @@ String _splitDir = "Vertical";
   }
 
   double _effectiveAuraModules() {
-    final uiGap = _auraSize.clamp(0.5, 5.0);
-    final normalized = ((uiGap - 0.5) / 4.5).clamp(0.0, 1.0);
-    return 0.12 + (normalized * 1.08);
+    // Bug 2 Fix: Rango ajustado 0.0 – 0.6 módulos para gap fino y estético.
+    // Slider _auraSize: 0.0 (sin gap) a 5.0 (gap grande).
+    final uiGap = _auraSize.clamp(0.0, 5.0);
+    final normalized = (uiGap / 5.0).clamp(0.0, 1.0);
+    return normalized * 0.60; // 0.0 a 0.6 módulos
   }
 
   double _effectiveLogo(bool isShape) {
@@ -323,23 +325,42 @@ String _splitDir = "Vertical";
     img = img.convert(numChannels: 4);
     final ext = file.path.toLowerCase();
     if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) img = _removeWhiteBg(img);
-    final w = img.width; final h = img.height;
-    final rB = List.generate(h, (_) => List.filled(w, false));
-    for (int y = 0; y < h; y++) {
-      int fx = -1, lx = -1;
-      for (int x = 0; x < w; x++) {
-        if (img.getPixel(x, y).a > 30) { if (fx == -1) fx = x; lx = x; }
-      }
-      if (fx != -1) for (int x = fx; x <= lx; x++) rB[y][x] = true;
+    final w = img.width;
+    final h = img.height;
+
+    // ── Bug 1 Fix: BFS flood fill desde los bordes transparentes ────────
+    // Marca como "exterior" todo pixel transparente accesible desde el borde.
+    // Lo que NO queda marcado = interior opaco O hueco interno encerrado.
+    // Así los huecos dentro de letras y formas quedan protegidos correctamente.
+    final exterior = List.generate(h, (_) => List.filled(w, false));
+    final queue = <List<int>>[];
+
+    void enqueueFlood(int x, int y) {
+      if (x < 0 || x >= w || y < 0 || y >= h) return;
+      if (exterior[y][x]) return;
+      if (img!.getPixel(x, y).a > 30) return; // es opaco → no es exterior transparente
+      exterior[y][x] = true;
+      queue.add([x, y]);
     }
-    final mask = List.generate(h, (_) => List.filled(w, false));
-    for (int x = 0; x < w; x++) {
-      int fy = -1, ly = -1;
-      for (int y = 0; y < h; y++) {
-        if (img.getPixel(x, y).a > 30) { if (fy == -1) fy = y; ly = y; }
-      }
-      if (fy != -1) for (int y = fy; y <= ly; y++) { if (rB[y][x]) mask[y][x] = true; }
+
+    // Sembrar desde los 4 bordes
+    for (int x = 0; x < w; x++) { enqueueFlood(x, 0); enqueueFlood(x, h - 1); }
+    for (int y = 0; y < h; y++) { enqueueFlood(0, y); enqueueFlood(w - 1, y); }
+
+    // BFS
+    while (queue.isNotEmpty) {
+      final p = queue.removeLast();
+      final px = p[0], py = p[1];
+      enqueueFlood(px + 1, py);
+      enqueueFlood(px - 1, py);
+      enqueueFlood(px, py + 1);
+      enqueueFlood(px, py - 1);
     }
+
+    // La máscara es todo lo que NO es exterior transparente
+    final mask = List.generate(h, (y) => List.generate(w, (x) => !exterior[y][x]));
+    // ────────────────────────────────────────────────────────────────────
+
     final png = Uint8List.fromList(img_lib.encodePng(img));
     final palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
     setState(() {
@@ -1423,8 +1444,9 @@ String _splitDir = "Vertical";
                 _sliderRow("Tamaño", "${effLogo.toInt()}px",
                     _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
                 const SizedBox(height: 10),
+                // Bug 2 Fix: min = 0.0 para gap mínimo real (sin espacio)
                 _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)}",
-                    _auraSize, 0.5, 5.0, 18, (v) => setState(() => _auraSize = v)),
+                    _auraSize, 0.0, 5.0, 18, (v) => setState(() => _auraSize = v)),
               ]),
             ),
           ],
@@ -2313,12 +2335,20 @@ String _buildSvg() {
 
     // ── Padding: agrandamos el canvas para el fondo ──────────────────
     final bool hasBg = _bgMode != "Transparente";
-    final double pad = hasBg ? 80.0 : 0.0;          // quiet zone: ~8 % a cada lado
+    final double pad = hasBg ? 80.0 : 0.0;
     final double totalSize = qrSize + 2 * pad;
-    final double cornerRadius = pad * 0.9;           // bordes redondeados proporcionales
+    final double cornerRadius = pad * 0.9;
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
+
+    // Bug 3 Fix: Para fondo transparente, limpiar explícitamente el canvas
+    // con color completamente transparente antes de dibujar cualquier cosa.
+    // PictureRecorder en Flutter inicializa con negro transparente (premultiplied),
+    // y sin este clear explícito los bordes pueden quedar negros en el PNG.
+    if (!hasBg) {
+      canvas.drawColor(const Color(0x00000000), BlendMode.clear);
+    }
 
     // ── Fondo ────────────────────────────────────────────────────────
     if (hasBg) {

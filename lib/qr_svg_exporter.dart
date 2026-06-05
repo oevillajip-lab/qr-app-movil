@@ -401,25 +401,38 @@ class QrSvgExporter {
       }
       buf.writeln('</g>');
     } else if (isLiquid) {
-      final segs = StringBuffer();
+      buf.writeln('<g fill="$qrFill">');
+      final double r2d = decoStep / 2;
+      final Set<String> drawnD = {};
       for (int rr = minRow; rr <= maxRow; rr++) {
         for (int cc = minCol; cc <= maxCol; cc++) {
           if (!on(rr, cc)) continue;
           final double x = originX + cc * decoStep;
           final double y = originY + rr * decoStep;
-          final double cx = x + decoStep / 2;
-          final double cy = y + decoStep / 2;
-          segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy)} ');
-          if (on(rr, cc + 1)) {
-            segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx + decoStep)} ${_f(cy)} ');
+          final double cx = x + r2d;
+          final double cy = y + r2d;
+          final bool right = on(rr, cc + 1);
+          final bool down = on(rr + 1, cc);
+          if (right) {
+            final String k = '$rr:$cc-H';
+            if (!drawnD.contains(k)) {
+              drawnD.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(decoStep * 2)}" height="${_f(decoStep)}" rx="${_f(r2d)}" ry="${_f(r2d)}"/>');
+            }
           }
-          if (on(rr + 1, cc)) {
-            segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy + decoStep)} ');
+          if (down) {
+            final String k = '$rr:$cc-V';
+            if (!drawnD.contains(k)) {
+              drawnD.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(decoStep)}" height="${_f(decoStep * 2)}" rx="${_f(r2d)}" ry="${_f(r2d)}"/>');
+            }
+          }
+          if (!right && !down && !on(rr, cc - 1) && !on(rr - 1, cc)) {
+            buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r2d)}"/>');
           }
         }
       }
-      buf.writeln('<path d="${segs.toString().trim()}" stroke="$qrFill" '
-          'stroke-width="${_f(decoStep)}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>');
+      buf.writeln('</g>');
     } else {
       buf.writeln('<g fill="$qrFill">');
       for (int rr = minRow; rr <= maxRow; rr++) {
@@ -461,25 +474,38 @@ class QrSvgExporter {
     final EyeKind eyeKind = isDots ? EyeKind.circle : (isDiamonds ? EyeKind.diamond : EyeKind.rect);
 
     if (isLiquid) {
-      final segs = StringBuffer();
+      buf.writeln('<g fill="$qrFill">');
+      final double r2q = qt / 2;
+      final Set<String> drawnQ = {};
       for (int r = 0; r < m; r++) {
         for (int c = 0; c < m; c++) {
           if (!darkOk(r, c)) continue;
           final double x = qrDataLeft + c * qt;
           final double y = qrDataTop + r * qt;
-          final double cx = x + qt / 2;
-          final double cy = y + qt / 2;
-          segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy)} ');
-          if (darkOk(r, c + 1)) {
-            segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx + qt)} ${_f(cy)} ');
+          final double cx = x + r2q;
+          final double cy = y + r2q;
+          final bool right = darkOk(r, c + 1);
+          final bool down = darkOk(r + 1, c);
+          if (right) {
+            final String k = '$r:$c-H';
+            if (!drawnQ.contains(k)) {
+              drawnQ.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(qt * 2)}" height="${_f(qt)}" rx="${_f(r2q)}" ry="${_f(r2q)}"/>');
+            }
           }
-          if (darkOk(r + 1, c)) {
-            segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy + qt)} ');
+          if (down) {
+            final String k = '$r:$c-V';
+            if (!drawnQ.contains(k)) {
+              drawnQ.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(qt)}" height="${_f(qt * 2)}" rx="${_f(r2q)}" ry="${_f(r2q)}"/>');
+            }
+          }
+          if (!right && !down && !darkOk(r, c - 1) && !darkOk(r - 1, c)) {
+            buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r2q)}"/>');
           }
         }
       }
-      buf.writeln('<path d="${segs.toString().trim()}" stroke="$qrFill" '
-          'stroke-width="${_f(qt)}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>');
+      buf.writeln('</g>');
     } else if (isBars) {
       buf.writeln('<g fill="$qrFill">');
       for (int c = 0; c < m; c++) {
@@ -591,23 +617,51 @@ class QrSvgExporter {
   }
 
   static String _drawLiquid(QrImage qr, int m, double t, String fill, List<List<bool>> excl) {
-    final segs = StringBuffer();
+    final buf = StringBuffer();
+    buf.writeln('<g fill="$fill">');
     bool ok(int r, int c) {
       if (r < 0 || r >= m || c < 0 || c >= m) return false;
       if (!qr.isDark(r, c) || _isEye(r, c, m) || excl[r][c]) return false;
       return true;
     }
+    // Track which connections have been drawn to avoid duplicates
+    final Set<String> drawn = {};
+    final double r2 = t / 2; // corner radius = half cell size
     for (int r = 0; r < m; r++) {
       for (int c = 0; c < m; c++) {
         if (!ok(r, c)) continue;
-        final double cx = c * t + t / 2;
-        final double cy = r * t + t / 2;
-        segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy)} ');
-        if (ok(r, c + 1)) segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx + t)} ${_f(cy)} ');
-        if (ok(r + 1, c)) segs.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy + t)} ');
+        final double x = c * t;
+        final double y = r * t;
+        final double cx = x + r2;
+        final double cy = y + r2;
+        final bool right = ok(r, c + 1);
+        final bool down = ok(r + 1, c);
+        // Horizontal segment to the right
+        if (right) {
+          final String k = '$r:$c-H';
+          if (!drawn.contains(k)) {
+            drawn.add(k);
+            // Rounded rect spanning two cells horizontally
+            buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(t * 2)}" height="${_f(t)}" rx="${_f(r2)}" ry="${_f(r2)}"/>');
+          }
+        }
+        // Vertical segment downward
+        if (down) {
+          final String k = '$r:$c-V';
+          if (!drawn.contains(k)) {
+            drawn.add(k);
+            // Rounded rect spanning two cells vertically
+            buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(t)}" height="${_f(t * 2)}" rx="${_f(r2)}" ry="${_f(r2)}"/>');
+          }
+        }
+        // Isolated dot (no connections) — draw a circle
+        if (!right && !down && !ok(r, c - 1) && !ok(r - 1, c)) {
+          buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r2)}"/>');
+        }
       }
     }
-    return '<path d="${segs.toString().trim()}" stroke="$fill" stroke-width="${_f(t)}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>\n';
+    buf.writeln('</g>');
+    return buf.toString();
   }
 
   static String _drawBars(QrImage qr, int m, double t, String fill, List<List<bool>> excl) {
@@ -710,21 +764,69 @@ class QrSvgExporter {
 
     final buf = StringBuffer();
     if (isLiquid) {
-      final seg1 = StringBuffer();
-      final seg2 = StringBuffer();
+      final double r2 = t / 2;
+      final Set<String> drawn1 = {};
+      final Set<String> drawn2 = {};
+      buf.writeln('<g fill="${sideFill(true)}">'); // group side 1
       for (int r = 0; r < m; r++) {
         for (int c = 0; c < m; c++) {
-          if (!darkOk(r, c)) continue;
-          final double cx = c * t + t / 2;
-          final double cy = r * t + t / 2;
-          final target = isSide1(r, c) ? seg1 : seg2;
-          target.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy)} ');
-          if (darkOk(r, c + 1) && sameSide(r, c, r, c + 1)) target.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx + t)} ${_f(cy)} ');
-          if (darkOk(r + 1, c) && sameSide(r, c, r + 1, c)) target.write('M ${_f(cx)} ${_f(cy)} L ${_f(cx)} ${_f(cy + t)} ');
+          if (!darkOk(r, c) || !isSide1(r, c)) continue;
+          final double x = c * t;
+          final double y = r * t;
+          final double cx = x + r2;
+          final double cy = y + r2;
+          final bool right = darkOk(r, c + 1) && sameSide(r, c, r, c + 1);
+          final bool down = darkOk(r + 1, c) && sameSide(r, c, r + 1, c);
+          if (right) {
+            final String k = '$r:$c-H';
+            if (!drawn1.contains(k)) {
+              drawn1.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(t * 2)}" height="${_f(t)}" rx="${_f(r2)}" ry="${_f(r2)}"/>');
+            }
+          }
+          if (down) {
+            final String k = '$r:$c-V';
+            if (!drawn1.contains(k)) {
+              drawn1.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(t)}" height="${_f(t * 2)}" rx="${_f(r2)}" ry="${_f(r2)}"/>');
+            }
+          }
+          if (!right && !down && !(darkOk(r, c - 1) && sameSide(r, c, r, c - 1)) && !(darkOk(r - 1, c) && sameSide(r, c, r - 1, c))) {
+            buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r2)}"/>');
+          }
         }
       }
-      if (seg1.isNotEmpty) buf.writeln('<path d="${seg1.toString().trim()}" stroke="${sideFill(true)}" stroke-width="${_f(t)}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>');
-      if (seg2.isNotEmpty) buf.writeln('<path d="${seg2.toString().trim()}" stroke="${sideFill(false)}" stroke-width="${_f(t)}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>');
+      buf.writeln('</g>');
+      buf.writeln('<g fill="${sideFill(false)}">'); // group side 2
+      for (int r = 0; r < m; r++) {
+        for (int c = 0; c < m; c++) {
+          if (!darkOk(r, c) || isSide1(r, c)) continue;
+          final double x = c * t;
+          final double y = r * t;
+          final double cx = x + r2;
+          final double cy = y + r2;
+          final bool right = darkOk(r, c + 1) && sameSide(r, c, r, c + 1);
+          final bool down = darkOk(r + 1, c) && sameSide(r, c, r + 1, c);
+          if (right) {
+            final String k = '$r:$c-H';
+            if (!drawn2.contains(k)) {
+              drawn2.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(t * 2)}" height="${_f(t)}" rx="${_f(r2)}" ry="${_f(r2)}"/>');
+            }
+          }
+          if (down) {
+            final String k = '$r:$c-V';
+            if (!drawn2.contains(k)) {
+              drawn2.add(k);
+              buf.writeln('<rect x="${_f(x)}" y="${_f(y)}" width="${_f(t)}" height="${_f(t * 2)}" rx="${_f(r2)}" ry="${_f(r2)}"/>');
+            }
+          }
+          if (!right && !down && !(darkOk(r, c - 1) && sameSide(r, c, r, c - 1)) && !(darkOk(r - 1, c) && sameSide(r, c, r - 1, c))) {
+            buf.writeln('<circle cx="${_f(cx)}" cy="${_f(cy)}" r="${_f(r2)}"/>');
+          }
+        }
+      }
+      buf.writeln('</g>');
       return buf.toString();
     }
 
