@@ -328,38 +328,85 @@ String _splitDir = "Vertical";
     final w = img.width;
     final h = img.height;
 
-    // ── Bug 1 Fix: BFS flood fill desde los bordes transparentes ────────
-    // Marca como "exterior" todo pixel transparente accesible desde el borde.
-    // Lo que NO queda marcado = interior opaco O hueco interno encerrado.
-    // Así los huecos dentro de letras y formas quedan protegidos correctamente.
+    // ── Paso 1: Crear máscara binaria de píxeles opacos ──────────────
+    final opaque = List.generate(h, (y) =>
+        List.generate(w, (x) => img!.getPixel(x, y).a > 30));
+
+    // ── Paso 2: Cierre morfológico (dilate → erode) ──────────────────
+    // Cierra los huecos entre aspas, letras separadas, gaps del logo.
+    // El kernel es ~3% de la dimensión menor de la imagen.
+    final int kernelRadius = math.max(3, (math.min(w, h) * 0.03).round());
+
+    // Dilate: expande los píxeles opacos para cerrar gaps
+    final dilated = List.generate(h, (_) => List.filled(w, false));
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        if (!opaque[y][x]) continue;
+        final int y0 = math.max(0, y - kernelRadius);
+        final int y1 = math.min(h - 1, y + kernelRadius);
+        final int x0 = math.max(0, x - kernelRadius);
+        final int x1 = math.min(w - 1, x + kernelRadius);
+        for (int ny = y0; ny <= y1; ny++) {
+          for (int nx = x0; nx <= x1; nx++) {
+            final double dx = (nx - x) / kernelRadius;
+            final double dy = (ny - y) / kernelRadius;
+            if (dx * dx + dy * dy <= 1.0) {
+              dilated[ny][nx] = true;
+            }
+          }
+        }
+      }
+    }
+
+    // Erode: contrae de vuelta para restaurar el tamaño original de la silueta
+    final closed = List.generate(h, (_) => List.filled(w, true));
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        if (dilated[y][x]) continue; // no-opaco en dilated
+        final int y0 = math.max(0, y - kernelRadius);
+        final int y1 = math.min(h - 1, y + kernelRadius);
+        final int x0 = math.max(0, x - kernelRadius);
+        final int x1 = math.min(w - 1, x + kernelRadius);
+        for (int ny = y0; ny <= y1; ny++) {
+          for (int nx = x0; nx <= x1; nx++) {
+            final double dx = (nx - x) / kernelRadius;
+            final double dy = (ny - y) / kernelRadius;
+            if (dx * dx + dy * dy <= 1.0) {
+              closed[ny][nx] = false;
+            }
+          }
+        }
+      }
+    }
+
+    // ── Paso 3: BFS flood fill desde los bordes sobre la máscara cerrada ─
+    // Todo lo transparente (closed=false) accesible desde el borde = exterior.
+    // Lo que NO es alcanzable = interior del logo (incluyendo huecos cerrados).
     final exterior = List.generate(h, (_) => List.filled(w, false));
     final queue = <List<int>>[];
 
     void enqueueFlood(int x, int y) {
       if (x < 0 || x >= w || y < 0 || y >= h) return;
       if (exterior[y][x]) return;
-      if (img!.getPixel(x, y).a > 30) return; // es opaco → no es exterior transparente
+      if (closed[y][x]) return; // es parte de la silueta cerrada → no es exterior
       exterior[y][x] = true;
       queue.add([x, y]);
     }
 
-    // Sembrar desde los 4 bordes
     for (int x = 0; x < w; x++) { enqueueFlood(x, 0); enqueueFlood(x, h - 1); }
     for (int y = 0; y < h; y++) { enqueueFlood(0, y); enqueueFlood(w - 1, y); }
 
-    // BFS
     while (queue.isNotEmpty) {
       final p = queue.removeLast();
-      final px = p[0], py = p[1];
-      enqueueFlood(px + 1, py);
-      enqueueFlood(px - 1, py);
-      enqueueFlood(px, py + 1);
-      enqueueFlood(px, py - 1);
+      enqueueFlood(p[0] + 1, p[1]);
+      enqueueFlood(p[0] - 1, p[1]);
+      enqueueFlood(p[0], p[1] + 1);
+      enqueueFlood(p[0], p[1] - 1);
     }
 
-    // La máscara es todo lo que NO es exterior transparente
+    // ── Paso 4: Máscara final = todo lo que NO es exterior ───────────
+    // Usa los píxeles opacos originales + los huecos internos cerrados.
     final mask = List.generate(h, (y) => List.generate(w, (x) => !exterior[y][x]));
-    // ────────────────────────────────────────────────────────────────────
 
     final png = Uint8List.fromList(img_lib.encodePng(img));
     final palette = await PaletteGenerator.fromImageProvider(MemoryImage(png));
@@ -2124,10 +2171,17 @@ Future<void> _guardarImagen() async {
   try {
     final pngBytes = await _renderPng();
     final svg = _buildSvg();
-    await ImageGallerySaver.saveImage(
-      pngBytes,
-      name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
-    );
+    final String fileName = "QR_Logo_${DateTime.now().millisecondsSinceEpoch}";
+    // Bug 3 Fix: saveImage convierte a JPEG internamente.
+    // Para preservar transparencia, guardamos como archivo .png y usamos saveFile.
+    if (_bgMode == "Transparente") {
+      final tmpDir = await getTemporaryDirectory();
+      final pngFile = File('${tmpDir.path}/$fileName.png');
+      await pngFile.writeAsBytes(pngBytes);
+      await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
+    } else {
+      await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
+    }
     await _addHistoryEntry(action: "PNG guardado", pngBytes: pngBytes, svg: svg);
 
     if (mounted) {
@@ -2527,10 +2581,15 @@ Future<Uint8List> _renderPreviewPng() async {
     try {
       // PNG → galería
       final pngBytes = await _renderPng();
-      await ImageGallerySaver.saveImage(
-        pngBytes,
-        name: "QR_Logo_${DateTime.now().millisecondsSinceEpoch}",
-      );
+      final String fileName = "QR_Logo_${DateTime.now().millisecondsSinceEpoch}";
+      if (_bgMode == "Transparente") {
+        final tmpDir = await getTemporaryDirectory();
+        final pngFile = File('${tmpDir.path}/$fileName.png');
+        await pngFile.writeAsBytes(pngBytes);
+        await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
+      } else {
+        await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
+      }
 
       // SVG → carpeta de documentos de la app
       final svg = _buildSvg();
