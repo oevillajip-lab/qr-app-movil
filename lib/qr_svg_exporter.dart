@@ -946,19 +946,8 @@ class QrSvgExporter {
       }
     }
 
-    final double activeW = maxPX >= minPX ? (maxPX - minPX + 1).toDouble() : w.toDouble();
-    final double activeH = maxPY >= minPY ? (maxPY - minPY + 1).toDouble() : h.toDouble();
-    final double aspect = activeW / math.max(activeH, 1.0);
-
-    double radiusX = logoAuraModules;
-    double radiusY = logoAuraModules;
-    if (aspect > 1.18) {
-      radiusY *= 0.82;
-    } else if (aspect < 0.85) {
-      radiusX *= 0.82;
-    }
-
-    return _dilateModuleMask(base, radiusX, radiusY);
+    // Radio uniforme para gap parejo alrededor de la silueta
+    return _dilateModuleMask(base, logoAuraModules, logoAuraModules);
   }
 
   static List<List<bool>> _dilateModuleMask(List<List<bool>> mask, double radiusX, double radiusY) {

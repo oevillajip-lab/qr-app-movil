@@ -3107,19 +3107,8 @@ List<List<bool>> _buildLogoExclusionGrid({
     }
   }
 
-  final double activeW = maxPX >= minPX ? (maxPX - minPX + 1).toDouble() : maskW.toDouble();
-  final double activeH = maxPY >= minPY ? (maxPY - minPY + 1).toDouble() : maskH.toDouble();
-  final double aspect = activeW / math.max(activeH, 1.0);
-
-  double radiusX = auraSize;
-  double radiusY = auraSize;
-  if (aspect > 1.18) {
-    radiusY *= 0.82;
-  } else if (aspect < 0.85) {
-    radiusX *= 0.82;
-  }
-
-  return _dilateModuleMask(base, radiusX, radiusY);
+  // Radio uniforme en ambas direcciones para gap parejo alrededor de la silueta
+  return _dilateModuleMask(base, auraSize, auraSize);
 }
 
 // ═══════════════════════════════════════════════════════════════════
