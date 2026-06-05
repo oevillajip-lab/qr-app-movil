@@ -2118,7 +2118,7 @@ Future<void> _showHistoryPreview(QrHistoryItem item) async {
                 'Descargar PNG', Icons.download_rounded,
                 () async {
                   Navigator.pop(ctx);
-                  await _saveHistoryImage({'pngBytes': await file.readAsBytes()});
+                  await _saveHistoryImage(item);
                 },
                 outlined: true,
               )),
