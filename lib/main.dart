@@ -3294,7 +3294,7 @@ class QrAdvancedPainter extends CustomPainter {
     }
   }
 
-  List<List<bool>> _buildLogoExcl(int m, double t) {
+  List<List<bool>> _buildLogoExcl(int m, double t, double canvasWidth) {
     if (outerMask == null || logoSize <= 0) {
       return List.generate(m, (_) => List.filled(m, false));
     }
@@ -3303,7 +3303,7 @@ class QrAdvancedPainter extends CustomPainter {
       outerMask: outerMask!,
       logoSize: logoSize,
       auraSize: auraSize,
-      referenceSize: size.width,
+      referenceSize: canvasWidth,
     );
   }
 
@@ -3872,7 +3872,7 @@ qrBox ??= Rect.fromCenter(
       );
     } else if (isSplit) {
           
-      final excl = _buildLogoExcl(m, t);
+      final excl = _buildLogoExcl(m, t, size.width);
 
       EyeStyle eyeStyle = EyeStyle.rect;
       if (advSubStyle.contains("Puntos")) eyeStyle = EyeStyle.circ;
