@@ -286,10 +286,7 @@ String _splitDir = "Vertical";
   }
 
   double _effectiveAuraModules() {
-    // Bug 2 Fix real: Mapear el slider (0.0 a 5.0) a (0.0 a 4.0) módulos.
-    // Esto asegura que safeRX sea >= 1.0 para valores visibles, permitiendo
-    // que la dilatación matemática de _dilateModuleMask funcione correctamente.
-    return _auraSize * 0.8;
+    return _auraSize * 0.25;
   }
 
   double _effectiveLogo(bool isShape) {
@@ -1494,7 +1491,6 @@ String _splitDir = "Vertical";
                 _sliderRow("Tamaño", "${effLogo.toInt()}px",
                     _logoSize, 30, 85, 11, (v) => setState(() => _logoSize = v)),
                 const SizedBox(height: 10),
-                // Bug 2 Fix: min = 0.0 para gap mínimo real (sin espacio)
                 _sliderRow("Separación", "${_auraSize.toStringAsFixed(1)}",
                     _auraSize, 0.0, 5.0, 18, (v) => setState(() => _auraSize = v)),
               ]),
@@ -1967,15 +1963,10 @@ Future<void> _addHistoryEntry({
       final pngBytes = await file.readAsBytes();
       
       final String fileName = "QR_Historial_${item.id}";
-      // Mismo fix que el export principal para transparencia
-      if (_bgMode == "Transparente") {
-        final tmpDir = await getTemporaryDirectory();
-        final pngFile = File('${tmpDir.path}/$fileName.png');
-        await pngFile.writeAsBytes(pngBytes);
-        await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
-      } else {
-        await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
-      }
+      final tmpDir = await getTemporaryDirectory();
+      final pngFile = File('${tmpDir.path}/$fileName.png');
+      await pngFile.writeAsBytes(pngBytes);
+      await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
       
       if (mounted) {
          ScaffoldMessenger.of(context).showSnackBar(
@@ -2183,16 +2174,11 @@ Future<void> _guardarImagen() async {
     final pngBytes = await _renderPng();
     final svg = _buildSvg();
     final String fileName = "QR_Logo_${DateTime.now().millisecondsSinceEpoch}";
-    // Bug 3 Fix: saveImage convierte a JPEG internamente.
-    // Para preservar transparencia, guardamos como archivo .png y usamos saveFile.
-    if (_bgMode == "Transparente") {
-      final tmpDir = await getTemporaryDirectory();
-      final pngFile = File('${tmpDir.path}/$fileName.png');
-      await pngFile.writeAsBytes(pngBytes);
-      await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
-    } else {
-      await ImageGallerySaver.saveImage(pngBytes, name: fileName, quality: 100);
-    }
+    // FIX: Guardar SIEMPRE como archivo PNG directo para no perder transparencia
+    final tmpDir = await getTemporaryDirectory();
+    final pngFile = File('${tmpDir.path}/$fileName.png');
+    await pngFile.writeAsBytes(pngBytes);
+    await ImageGallerySaver.saveFile(pngFile.path, name: fileName);
     await _addHistoryEntry(action: "PNG guardado", pngBytes: pngBytes, svg: svg);
 
     if (mounted) {
@@ -2407,13 +2393,10 @@ String _buildSvg() {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // Bug 3 Fix: Para fondo transparente, limpiar explícitamente el canvas
-    // con color completamente transparente antes de dibujar cualquier cosa.
-    // PictureRecorder en Flutter inicializa con negro transparente (premultiplied),
-    // y sin este clear explícito los bordes pueden quedar negros en el PNG.
-    if (!hasBg) {
-      canvas.drawColor(const Color(0x00000000), BlendMode.clear);
-    }
+    // FIX: Siempre limpiar explícitamente el canvas con color completamente transparente.
+    // Esto asegura que las 4 esquinas exteriores al rectángulo curvo sean transparentes
+    // en la exportación PNG final.
+    canvas.drawColor(const Color(0x00000000), BlendMode.clear);
 
     // ── Fondo ────────────────────────────────────────────────────────
     if (hasBg) {
@@ -3174,6 +3157,7 @@ class QrMasterPainter extends CustomPainter {
             outerMask: outerMask!,
             logoSize: effLogo,
             auraSize: auraSize,
+            referenceSize: size.width,
           )
         : List.generate(m, (_) => List.filled(m, false));
     bool ok(int r, int c) {
@@ -3319,6 +3303,7 @@ class QrAdvancedPainter extends CustomPainter {
       outerMask: outerMask!,
       logoSize: logoSize,
       auraSize: auraSize,
+      referenceSize: size.width,
     );
   }
 
